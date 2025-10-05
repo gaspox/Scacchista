@@ -1,16 +1,13 @@
 use clap::Parser;
-use scacchista::board::{Board, START_FEN, PieceKind, Color, move_from_sq, move_to_sq, move_piece, Move};
-use scacchista::board::Move as ScMove; // alias to avoid collision with shakmaty::Move if needed
+use scacchista::board::{Board, START_FEN, PieceKind, Color, move_from_sq, move_to_sq, move_piece};
+use scacchista::board::Move as MoveType; // explicit alias for type in function signatures
+
+use shakmaty::{Chess, Position};
+use shakmaty::fen::Fen;  // used when parsing non-start FEN
 
 use std::vec::Vec; // ensure Vec<Move> available in signature
 
-use scacchista::board::Move as MoveType; // explicit alias for type in function signatures
-
-// Note: perft path uses scacchista::board::Move type as MoveType; function signatures will use MoveType
-
 // (move type is u32 alias in crate)
-use shakmaty::{Chess, Position};
-use shakmaty::fen::Fen;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

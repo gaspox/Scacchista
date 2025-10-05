@@ -374,50 +374,6 @@ impl Board {
         }
     }
 
-    // Debug method to see what's attacking a square
-    fn debug_attacks(&self, sq: usize, by: Color) {
-        // Pawn attacks
-        if by == Color::White {
-            let white_pawns = self.piece_bb(PieceKind::Pawn, Color::White);
-            if ((white_pawns & crate::utils::NOT_FILE_A) << 7) & (1u64 << sq) != 0 {
-                eprintln!("  Attacked by white pawn from file-1");
-            }
-            if ((white_pawns & crate::utils::NOT_FILE_H) << 9) & (1u64 << sq) != 0 {
-                eprintln!("  Attacked by white pawn from file+1");
-            }
-        } else {
-            let black_pawns = self.piece_bb(PieceKind::Pawn, Color::Black);
-            let left_attacks = (black_pawns & crate::utils::NOT_FILE_A) >> 9;
-            let right_attacks = (black_pawns & crate::utils::NOT_FILE_H) >> 7;
-            eprintln!("  Black pawns bb: {:x}", black_pawns);
-            eprintln!("  Black left attacks on sq {}: {:x} & {:x} = {:x}", sq, left_attacks, 1u64 << sq, left_attacks & (1u64 << sq));
-            eprintln!("  Black right attacks on sq {}: {:x} & {:x} = {:x}", sq, right_attacks, 1u64 << sq, right_attacks & (1u64 << sq));
-            if left_attacks & (1u64 << sq) != 0 {
-                eprintln!("  Attacked by black pawn from file+1");
-            }
-            if right_attacks & (1u64 << sq) != 0 {
-                eprintln!("  Attacked by black pawn from file-1");
-            }
-        }
-        // Knight attacks
-        if crate::utils::knight_attacks(sq) & self.piece_bb(PieceKind::Knight, by) != 0 {
-            eprintln!("  Attacked by knight");
-        }
-        // King attacks
-        if crate::utils::king_attacks(sq) & self.piece_bb(PieceKind::King, by) != 0 {
-            eprintln!("  Attacked by king");
-        }
-        // Diagonal attacks
-        let diagonal_attackers = self.piece_bb(PieceKind::Bishop, by) | self.piece_bb(PieceKind::Queen, by);
-        if diagonal_attackers != 0 {
-            eprintln!("  Checking diagonal attacks with attackers at {:x}", diagonal_attackers);
-        }
-        // Orthogonal attacks
-        let orthogonal_attackers = self.piece_bb(PieceKind::Rook, by) | self.piece_bb(PieceKind::Queen, by);
-        if orthogonal_attackers != 0 {
-            eprintln!("  Checking orthogonal attacks with attackers at {:x}", orthogonal_attackers);
-        }
-    }
 
     // Public method to force recalc Zobrist
     pub fn recalc_zobrist(&self) -> u64 {

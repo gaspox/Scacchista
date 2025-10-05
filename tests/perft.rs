@@ -1,6 +1,5 @@
 use scacchista::board::{Board, START_FEN};
 use shakmaty::{Chess, Position};
-use shakmaty::fen::Fen;
 
 fn perft_shakmaty(pos: &Chess, depth: u8) -> u64 {
     if depth == 0 { return 1; }
