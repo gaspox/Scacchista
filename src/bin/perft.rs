@@ -14,9 +14,6 @@ struct Args {
 fn perft_scacchista(board: &mut Board, depth: u8) -> u64 {
     if depth == 0 { return 1; }
     let moves = board.generate_moves();
-    if depth == 1 {
-        eprintln!("Scacchista depth 1 moves count: {}", moves.len());
-    }
     let mut nodes = 0u64;
     for mv in moves {
         let undo = board.make_move(mv);
@@ -38,6 +35,10 @@ fn perft_shakmaty(pos: &Chess, depth: u8) -> u64 {
 
 fn main() {
     scacchista::init();
+    // Force initialization of attack tables
+    scacchista::utils::init_attack_tables();
+    scacchista::zobrist::init_zobrist();
+
     let args = Args::parse();
 
     println!("Running perft on FEN: '{}' at depth {}", args.fen, args.depth);
@@ -56,10 +57,6 @@ fn main() {
     // Scacchista
     let mut board = Board::new();
     board.set_from_fen(&args.fen).unwrap();
-    eprintln!("side: {:?}", board.side);
-    eprintln!("pawns white {}", board.piece_bb(PieceKind::Pawn, Color::White).count_ones());
-    eprintln!("pawns black {}", board.piece_bb(PieceKind::Pawn, Color::Black).count_ones());
-    eprintln!("Initial black_pawns bb: {:x}", board.piece_bb(PieceKind::Pawn, Color::Black));
     let start = std::time::Instant::now();
     let nodes_sc = perft_scacchista(&mut board, args.depth);
     let dur_sc = start.elapsed();

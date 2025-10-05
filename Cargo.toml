@@ -20,6 +20,14 @@ path = "src/main.rs"
 name = "perft"
 path = "src/bin/perft.rs"
 
+[[bin]]
+name = "debug_perft"
+path = "debug_perft.rs"
+
+[[bin]]
+name = "test_board"
+path = "test_board.rs"
+
 [profile.release]
 lto = true
 codegen-units = 1

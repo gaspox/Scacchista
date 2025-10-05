@@ -1,7 +1,6 @@
 // Mapping di quadrati: A1=0, B1=1, ..., H8=63
 // Usiamo questo mapping coerente per tutte le operazioni pipeline
 
-use crate::utils;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Color {
@@ -282,7 +281,11 @@ impl Board {
                     let old_file = (old_ep_sq % 8) as usize;
                     self.zobrist ^= crate::zobrist::ZOB_EP_FILE[old_file];
                 }
-                let new_ep_sq = if piece == PieceKind::Pawn && to.abs_diff(from) == 16 { Some(((from + to) / 2) as u8) } else { None };
+                let new_ep_sq = if piece == PieceKind::Pawn && to.abs_diff(from) == 16 {
+                Some(((from + to) / 2) as u8)
+            } else {
+                None
+            };
                 if let Some(ep_sq) = new_ep_sq {
                     let file = (ep_sq % 8) as usize;
                     self.zobrist ^= crate::zobrist::ZOB_EP_FILE[file];
@@ -304,8 +307,6 @@ impl Board {
         let moved_piece = if move_flag(mv, FLAG_PROMOTION) { move_promotion(mv).unwrap() } else { piece };
         self.set_piece(to, moved_piece, color);
         self.refresh_occupancy();
-        // Update castling flags (already updated Zobrist)
-        self.update_castling_after_move(color, piece, from);
         // Update en-passant flag
         self.ep = if piece == PieceKind::Pawn && to.abs_diff(from) == 16 { Some(((from + to) / 2) as u8) } else { None };
         // Update move counters
@@ -324,20 +325,27 @@ impl Board {
         self.ep = undo.prev_ep;
         self.castling = undo.prev_castling;
         // Restore piece bitboards and king square
-        let moved_piece = if move_flag(undo.flags, FLAG_PROMOTION) { undo.moved_piece } else { undo.moved_piece };
-        self.remove_piece(undo.to, if move_flag(undo.flags, FLAG_PROMOTION) { undo.moved_piece } else { moved_piece }, if self.side == Color::Black { Color::White } else { Color::Black });
-        self.set_piece(undo.from, moved_piece, if self.side == Color::Black { Color::White } else { Color::Black });
+        let moved_piece = undo.moved_piece; // promotion piece already stored in undo.moved_piece
+        let mover_color = self.side; // self.side was restored to the mover's color above
+
+        // Remove moved piece from destination and put it back on origin
+        self.remove_piece(undo.to, moved_piece, mover_color);
+        self.set_piece(undo.from, moved_piece, mover_color);
+
         if moved_piece == PieceKind::King {
-            if self.side == Color::White {
+            if mover_color == Color::White {
                 self.white_king_sq = undo.from as u8;
             } else {
                 self.black_king_sq = undo.from as u8;
             }
         }
-        // Restore captured if any
+
+        // Restore captured if any (captured piece belongs to the opponent)
         if let Some(capt) = undo.captured_piece {
-            self.set_piece(undo.captured_sq.unwrap(), capt, if self.side == Color::Black { Color::White } else { Color::Black });
+            let cap_color = if mover_color == Color::White { Color::Black } else { Color::White };
+            self.set_piece(undo.captured_sq.unwrap(), capt, cap_color);
         }
+
         self.refresh_occupancy();
         // Restore hash
         self.zobrist = undo.prev_zobrist;
@@ -375,8 +383,8 @@ impl Board {
             }
         } else {
             let black_pawns = self.piece_bb(PieceKind::Pawn, Color::Black);
-            let left_attacks = ((black_pawns & crate::utils::NOT_FILE_A) >> 9);
-            let right_attacks = ((black_pawns & crate::utils::NOT_FILE_H) >> 7);
+            let left_attacks = (black_pawns & crate::utils::NOT_FILE_A) >> 9;
+            let right_attacks = (black_pawns & crate::utils::NOT_FILE_H) >> 7;
             eprintln!("  Black pawns bb: {:x}", black_pawns);
             eprintln!("  Black left attacks on sq {}: {:x} & {:x} = {:x}", sq, left_attacks, 1u64 << sq, left_attacks & (1u64 << sq));
             eprintln!("  Black right attacks on sq {}: {:x} & {:x} = {:x}", sq, right_attacks, 1u64 << sq, right_attacks & (1u64 << sq));
@@ -521,8 +529,6 @@ impl Board {
         self.generate_pseudo_moves(&mut pseudo);
         let mut legal = Vec::with_capacity(pseudo.len());
         for mv in pseudo {
-            let from = move_from_sq(mv);
-            let to = move_to_sq(mv);
             let undo = self.make_move(mv);
             // After make_move, self.side is now the opponent
             let side_to_move = self.side;
@@ -548,7 +554,7 @@ impl Board {
     fn generate_pawn_pseudos(&self, side: Color, out: &mut Vec<Move>) {
         let pawns = self.piece_bb(PieceKind::Pawn, side);
         let empty = !self.occ;
-        let (prom_rank, enemy_occ, forward_shift, ep_target) = match side {
+        let (prom_rank, enemy_occ, _forward_shift, ep_target) = match side {
             Color::White => (crate::utils::RANK_8, self.black_occ, 8, self.ep),
             Color::Black => (crate::utils::RANK_1, self.white_occ, -8, self.ep),
         };
@@ -598,7 +604,7 @@ impl Board {
                 Color::White => to - 9,
                 Color::Black => to + 7,
             };
-            let (capsq, flags) = if ep_target.map_or(false, |ep| to == ep as usize) {
+            let (_capsq, flags) = if ep_target.map_or(false, |ep| to == ep as usize) {
                 let ep_sq = ep_target.unwrap() as usize;
                 (match side {
                     Color::White => (ep_sq as i32 - 8) as usize,
@@ -619,7 +625,7 @@ impl Board {
                 Color::White => to - 7,
                 Color::Black => to + 9,
             };
-            let (capsq, flags) = if ep_target.map_or(false, |ep| to == ep as usize) {
+            let (_capsq, flags) = if ep_target.map_or(false, |ep| to == ep as usize) {
                 let ep_sq = ep_target.unwrap() as usize;
                 (match side {
                     Color::White => (ep_sq as i32 - 8) as usize,
@@ -898,7 +904,7 @@ impl Board {
         // Kingside castling
         let ks_mask = if side == Color::White { 0b1000u8 } else { 0b0010u8 };
         if (self.castling & ks_mask) != 0 {
-            let (rook_start, king_to, rook_to) = if side == Color::White {
+            let (rook_start, king_to, _rook_to) = if side == Color::White {
                 (7, 6, 5) // h1->f1, e1->g1, h1->f1
             } else {
                 (63, 62, 61) // h8->f8, e8->g8, h8->f8
@@ -942,7 +948,7 @@ impl Board {
         // Queenside castling
         let qs_mask = if side == Color::White { 0b0100u8 } else { 0b0001u8 };
         if (self.castling & qs_mask) != 0 {
-            let (rook_start, king_to, rook_to) = if side == Color::White {
+            let (rook_start, king_to, _rook_to) = if side == Color::White {
                 (0, 2, 3) // a1->d1, e1->c1, a1->d1
             } else {
                 (56, 58, 59) // a8->d8, e8->c8, a8->d8
@@ -1045,7 +1051,7 @@ impl Board {
                         'k' => (PieceKind::King, Color::Black),
                         _ => return Err("invalid piece char"),
                     };
-                    let sq = rank*8 + file;
+                    let sq = (7 - rank) * 8 + file;
                     self.set_piece(sq, kind, color);
                     file += 1;
                 }

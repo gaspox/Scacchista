@@ -68,45 +68,84 @@ impl Iterator for BitIter {
 #[inline]
 pub fn iter_bits(bb: u64) -> BitIter { BitIter { bb } }
 
-// Precomputed attack tables (lazy_static / once_cell logic will initialize once)
-pub static mut KNIGHT_ATTACKS: [u64; 64] = [0; 64];
-pub static mut KING_ATTACKS: [u64; 64] = [0; 64];
+// Precomputed attack tables using OnceLock for thread safety
+use std::sync::OnceLock;
+
+static KNIGHT_ATTACKS: OnceLock<[u64; 64]> = OnceLock::new();
+static KING_ATTACKS: OnceLock<[u64; 64]> = OnceLock::new();
+
+fn init_knight_attacks() -> [u64; 64] {
+    const KNIGHT_OFFSETS: [(i8, i8); 8] = [
+        (-2, -1), (-2, 1), (-1, -2), (-1, 2),
+        (1, -2), (1, 2), (2, -1), (2, 1)
+    ];
+    let mut attacks = [0u64; 64];
+
+    for sq in 0..64 {
+        let file = sq % 8;
+        let rank = sq / 8;
+        let mut attack_mask = 0u64;
+
+        for (dx, dy) in &KNIGHT_OFFSETS {
+            let new_file = file as i8 + dx;
+            let new_rank = rank as i8 + dy;
+            if new_file >= 0 && new_file < 8 && new_rank >= 0 && new_rank < 8 {
+                let target_sq = (new_rank as usize) * 8 + (new_file as usize);
+                attack_mask |= 1u64 << target_sq;
+            }
+        }
+        attacks[sq] = attack_mask;
+    }
+    attacks
+}
+
+fn init_king_attacks() -> [u64; 64] {
+    const KING_OFFSETS: [(i8, i8); 8] = [
+        (-1, -1), (-1, 0), (-1, 1),
+        (0, -1),           (0, 1),
+        (1, -1),  (1, 0),  (1, 1)
+    ];
+    let mut attacks = [0u64; 64];
+
+    for sq in 0..64 {
+        let file = sq % 8;
+        let rank = sq / 8;
+        let mut attack_mask = 0u64;
+
+        for (dx, dy) in &KING_OFFSETS {
+            let new_file = file as i8 + dx;
+            let new_rank = rank as i8 + dy;
+            if new_file >= 0 && new_file < 8 && new_rank >= 0 && new_rank < 8 {
+                let target_sq = (new_rank as usize) * 8 + (new_file as usize);
+                attack_mask |= 1u64 << target_sq;
+            }
+        }
+        attacks[sq] = attack_mask;
+    }
+    attacks
+}
+
 #[inline(always)]
 pub fn init_attack_tables() {
-    unsafe {
-        // Knight attacks
-        const KNIGHT_DELTAS: [i8; 8] = [-17, -15, -10, -6, 6, 10, 15, 17];
-        for sq in 0..64 {
-            let mut attacks = 0u64;
-            for d in &KNIGHT_DELTAS {
-                let file = sq % 8;
-                let rank = sq / 8;
-                let new_file_i8 = file as i8 + *d % 8;
-                let new_rank = rank as i8 + *d / 8;
-                if (0..8).contains(&new_file_i8) && (0..8).contains(&new_rank) {
-                    attacks |= 1u64 << ((new_rank * 8 + new_file_i8) as usize);
-                }
-            }
-            KNIGHT_ATTACKS[sq as usize] = attacks;
-        }
-        // King attacks
-        const KING_DELTAS: [i8; 8] = [-9, -8, -7, -1, 1, 7, 8, 9];
-        for sq in 0..64 {
-            let mut attacks = 0u64;
-            for d in &KING_DELTAS {
-                let file = sq % 8;
-                let rank = sq / 8;
-                let new_file = (file as i8 + *d) % 8;
-                let new_rank = rank as i8 + *d / 8;
-                if new_file >= 0 && new_file < 8 && new_rank >= 0 && new_rank < 8 {
-                    attacks |= 1u64 << ((new_rank * 8 + new_file) as usize);
-                }
-            }
-            KING_ATTACKS[sq as usize] = attacks;
-        }
-    }
+    // Initialize both tables if not already done
+    KNIGHT_ATTACKS.get_or_init(|| init_knight_attacks());
+    KING_ATTACKS.get_or_init(|| init_king_attacks());
 }
+
 #[inline]
-pub fn knight_attacks(sq: usize) -> u64 { unsafe { KNIGHT_ATTACKS[sq] } }
+pub fn knight_attacks(sq: usize) -> u64 {
+    let table = KNIGHT_ATTACKS.get().unwrap_or_else(|| {
+        init_attack_tables();
+        KNIGHT_ATTACKS.get().unwrap()
+    });
+    table[sq]
+}
+
 #[inline]
-pub fn king_attacks(sq: usize) -> u64 { unsafe { KING_ATTACKS[sq] } }
+pub fn king_attacks(sq: usize) -> u64 {
+    let table = KING_ATTACKS.get().unwrap_or_else(|| {
+        init_attack_tables();
+        KING_ATTACKS.get().unwrap()
+    });
+    table[sq]
+}
