@@ -296,6 +296,7 @@ impl Board {
         if piece == PieceKind::King {
             if color == Color::White { self.white_king_sq = to as u8; } else { self.black_king_sq = to as u8; }
         }
+
         self.remove_piece(from, piece, color);
         if let Some(capt) = captured {
             if move_flag(mv, FLAG_EN_PASSANT) {
@@ -305,8 +306,58 @@ impl Board {
             }
         }
         let moved_piece = if move_flag(mv, FLAG_PROMOTION) { move_promotion(mv).unwrap() } else { piece };
+        // Sanity: destination should be empty now (captures already removed). Check piece_bb directly (occ may be stale until refresh).
+        let mut dest_occupied_by_piece_bb = false;
+        for i in 0..12 {
+            if (self.piece_bb[i] & (1u64 << to)) != 0 {
+                dest_occupied_by_piece_bb = true;
+                let kind = match i % 6 {
+                    0 => PieceKind::Pawn,
+                    1 => PieceKind::Knight,
+                    2 => PieceKind::Bishop,
+                    3 => PieceKind::Rook,
+                    4 => PieceKind::Queen,
+                    5 => PieceKind::King,
+                    _ => unreachable!(),
+                };
+                let col = if i < 6 { Color::White } else { Color::Black };
+                eprintln!("DESTINATION OCCUPIED before set_piece at {} according to piece_bb: occupier {:?} {:?} (piece_bb index {})", to, col, kind, i);
+            }
+        }
+        if dest_occupied_by_piece_bb {
+            eprintln!("move mv bits: 0x{:x} from {} to {} piece {:?} flags=0x{:x} captured={:?} captured_sq={:?} prev_ep={:?} prev_side={:?}", mv, from, to, piece, flags, captured, captured_sq, undo.prev_ep, undo.prev_side);
+            // dump nearby squares
+            for sq in (if to>=4 {to-4} else {0})..=((to+4).min(63)) {
+                if let Some((k,c)) = self.piece_on(sq) {
+                    eprintln!(" square {} has {:?} {:?}", sq, c, k);
+                }
+            }
+            panic!("Destination not empty before set_piece (per piece_bb)");
+        }
         self.set_piece(to, moved_piece, color);
         self.refresh_occupancy();
+
+
+        // Debug invariant: recompute occupancy from piece_bb and verify consistency
+        {
+            let mut recomputed_white = 0u64;
+            let mut recomputed_black = 0u64;
+            for k in 0..6 {
+                recomputed_white |= self.piece_bb_raw(k);
+                recomputed_black |= self.piece_bb_raw(k + 6);
+            }
+            let recomputed_all = recomputed_white | recomputed_black;
+            if recomputed_white != self.white_occ || recomputed_black != self.black_occ || recomputed_all != self.occ {
+                eprintln!("OCCUPANCY INVARIANT FAILURE in make_move(): recomputed white={:x} black={:x} all={:x} vs stored white={:x} black={:x} all={:x}",
+                          recomputed_white, recomputed_black, recomputed_all,
+                          self.white_occ, self.black_occ, self.occ);
+                // dump some context
+                eprintln!("move made: {} -> {} piece {:?} flags=0x{:x}", from, to, piece, flags);
+                eprintln!("white king sq: {} black king sq: {}", self.white_king_sq, self.black_king_sq);
+                panic!("Occupancy invariant violated after make_move");
+            }
+        }
+
         // Update en-passant flag
         self.ep = if piece == PieceKind::Pawn && to.abs_diff(from) == 16 { Some(((from + to) / 2) as u8) } else { None };
         // Update move counters
@@ -347,6 +398,25 @@ impl Board {
         }
 
         self.refresh_occupancy();
+
+        // Debug invariant: recompute occupancy and ensure matches stored
+        {
+            let mut recomputed_white = 0u64;
+            let mut recomputed_black = 0u64;
+            for k in 0..6 {
+                recomputed_white |= self.piece_bb_raw(k);
+                recomputed_black |= self.piece_bb_raw(k + 6);
+            }
+            let recomputed_all = recomputed_white | recomputed_black;
+            if recomputed_white != self.white_occ || recomputed_black != self.black_occ || recomputed_all != self.occ {
+                eprintln!("OCCUPANCY INVARIANT FAILURE in unmake_move(): recomputed white={:x} black={:x} all={:x} vs stored white={:x} black={:x} all={:x}",
+                          recomputed_white, recomputed_black, recomputed_all,
+                          self.white_occ, self.black_occ, self.occ);
+                eprintln!("Undo: from {} to {} moved {:?} prev_side={:?}", undo.from, undo.to, undo.moved_piece, undo.prev_side);
+                panic!("Occupancy invariant violated after unmake_move");
+            }
+        }
+
         // Restore hash
         self.zobrist = undo.prev_zobrist;
     }
@@ -613,7 +683,8 @@ impl Board {
             } else {
                 (to, FLAG_CAPTURE)
             };
-            out.push(new_move(from, to, PieceKind::Pawn, Some(PieceKind::Pawn), None, flags));
+            let captured_kind = if flags & FLAG_EN_PASSANT != 0 { PieceKind::Pawn } else { self.piece_on(to).unwrap().0 };
+            out.push(new_move(from, to, PieceKind::Pawn, Some(captured_kind), None, flags));
         }
         let left_capture = match side {
             Color::White => ((pawns & crate::utils::NOT_FILE_A) << 7) & enemy_occ,
@@ -634,7 +705,8 @@ impl Board {
             } else {
                 (to, FLAG_CAPTURE)
             };
-            out.push(new_move(from, to, PieceKind::Pawn, Some(PieceKind::Pawn), None, flags));
+            let captured_kind = if flags & FLAG_EN_PASSANT != 0 { PieceKind::Pawn } else { self.piece_on(to).unwrap().0 };
+            out.push(new_move(from, to, PieceKind::Pawn, Some(captured_kind), None, flags));
         }
         // Promotions (push and capture onto promotion rank)
         let promo_push_dest = push_dest & prom_rank;
@@ -660,7 +732,7 @@ impl Board {
                 Color::Black => to + 7,
             };
             for kind in [PieceKind::Queen, PieceKind::Rook, PieceKind::Bishop, PieceKind::Knight] {
-                out.push(new_move(from, to, PieceKind::Pawn, Some(PieceKind::Pawn), Some(kind), FLAG_PROMOTION | FLAG_CAPTURE));
+                let captured_kind = self.piece_on(to).unwrap().0; out.push(new_move(from, to, PieceKind::Pawn, Some(captured_kind), Some(kind), FLAG_PROMOTION | FLAG_CAPTURE));
             }
         }
         let promo_capture_left = match side {
@@ -674,7 +746,7 @@ impl Board {
                 Color::Black => to + 9,
             };
             for kind in [PieceKind::Queen, PieceKind::Rook, PieceKind::Bishop, PieceKind::Knight] {
-                out.push(new_move(from, to, PieceKind::Pawn, Some(PieceKind::Pawn), Some(kind), FLAG_PROMOTION | FLAG_CAPTURE));
+                let captured_kind = self.piece_on(to).unwrap().0; out.push(new_move(from, to, PieceKind::Pawn, Some(captured_kind), Some(kind), FLAG_PROMOTION | FLAG_CAPTURE));
             }
         }
     }
@@ -1051,7 +1123,7 @@ impl Board {
                         'k' => (PieceKind::King, Color::Black),
                         _ => return Err("invalid piece char"),
                     };
-                    let sq = (7 - rank) * 8 + file;
+                    let sq = rank * 8 + file;
                     self.set_piece(sq, kind, color);
                     file += 1;
                 }
