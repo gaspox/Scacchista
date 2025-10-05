@@ -1,0 +1,10 @@
+# Claude Code specific files
+CLAUDE.md
+
+# Project documents
+p1.pdf
+p1.txt
+
+# Rust build artifacts
+/target
+Cargo.lock

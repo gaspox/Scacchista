@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pdftotext:*)",
+      "Bash(cargo:*)",
+      "Bash(ssh-keygen:*)",
+      "Read(//home/gaspare/.ssh/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
