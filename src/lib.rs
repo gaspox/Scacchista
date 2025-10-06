@@ -1,6 +1,7 @@
 pub mod board;
 pub mod zobrist;
 pub mod utils;
+pub mod search; // Scacchista search module (was MyRustChessEngine search)
 
 // Re-export move utilities for the perft binary
 pub use board::{

@@ -4,7 +4,18 @@
       "Bash(pdftotext:*)",
       "Bash(cargo:*)",
       "Bash(ssh-keygen:*)",
-      "Read(//home/gaspare/.ssh/**)"
+      "Read(//home/gaspare/.ssh/**)",
+      "Bash(timeout 10s cargo run --bin perft -- --depth 1)",
+      "Bash(./target/debug/perft:*)",
+      "Bash(rustc:*)",
+      "Bash(git add:*)",
+      "Bash(git push:*)",
+      "Bash(git commit:*)",
+      "Bash(time cargo run --release --bin simple_search_test)",
+      "Bash(RUST_BACKTRACE=1 cargo test search::tt::tests::test_tt_replacement -- --nocapture)",
+      "Bash(git checkout HEAD -- src/search/tt.rs)",
+      "Bash(cat src/search/tt.rs)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []
