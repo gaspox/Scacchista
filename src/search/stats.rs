@@ -35,6 +35,9 @@ pub struct SearchStats {
     /// Futility pruned nodes
     pub futility_pruned: u64,
 
+    /// SEE evaluations performed
+    pub see_evals: u64,
+
     /// Search start time
     pub start_time: Option<Instant>,
 
@@ -110,13 +113,18 @@ impl SearchStats {
     }
 
     /// Increment LMR reduction count
-    pub fn inc_lmr(&mut self) {
+    pub fn inc_lmr_reduction(&mut self) {
         self.lmr_reductions += 1;
     }
 
     /// Increment futility pruning count
     pub fn inc_futility_pruned(&mut self) {
         self.futility_pruned += 1;
+    }
+
+    /// Increment SEE evaluation count
+    pub fn inc_see_eval(&mut self) {
+        self.see_evals += 1;
     }
 
     /// Reset all statistics
@@ -143,6 +151,7 @@ impl SearchStats {
         println!("Null-move cutoffs: {}", self.null_move_cutoffs);
         println!("LMR reductions: {}", self.lmr_reductions);
         println!("Futility pruned: {}", self.futility_pruned);
+        println!("SEE evaluations: {}", self.see_evals);
         println!("Search time: {} ms", self.search_time.as_millis());
         println!("Nodes per second: {}", self.nps);
 
