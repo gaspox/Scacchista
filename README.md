@@ -1,4 +1,4 @@
-# MyRustChessEngine
+# Scacchista
 
 Un motore UCI di scacchi scritto in Rust che sfrutta shakmaty per la logica delle regole e una rappresentazione interna ad alte prestazioni per la ricerca.
 
