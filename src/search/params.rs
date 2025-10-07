@@ -78,6 +78,12 @@ impl SearchParams {
         self
     }
 
+    /// Set aspiration window size in centipawns
+    pub fn aspiration_window(mut self, window: i16) -> Self {
+        self.aspiration_window = window;
+        self
+    }
+
     /// Set node limit
     pub fn node_limit(mut self, limit: u64) -> Self {
         self.node_limit = limit;

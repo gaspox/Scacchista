@@ -3,11 +3,11 @@
 //! Implements iterative deepening alpha-beta search with transposition table
 //! and basic move ordering capabilities.
 
-use crate::board::{Board, Move, PieceKind, Color};
-use crate::{move_flag, move_to_sq};
-use super::tt::{TranspositionTable, NodeType};
 use super::params::{SearchParams, TimeManagement};
 use super::stats::SearchStats;
+use super::tt::{NodeType, TranspositionTable};
+use crate::board::{Board, Color, Move, PieceKind, FLAG_PROMOTION};
+use crate::{move_captured, move_flag, move_piece, move_to_sq};
 
 /// Search engine configurations
 pub const INFINITE: i16 = 30000;
@@ -50,22 +50,21 @@ impl Search {
     /// New search engine
     pub fn new(board: Board, tt_size_mb: usize, params: SearchParams) -> Self {
         let killer_moves_count = params.killer_moves_count;
+        let max_ply = params.max_depth as usize + 1; // +1 for array indexing
         Self {
             board,
             tt: TranspositionTable::new(tt_size_mb),
             params,
             stats: SearchStats::new(),
             time_mgmt: TimeManagement::new(),
-            killer_moves: vec![vec![0; killer_moves_count]; 2], // [ply][slot]
+            killer_moves: vec![vec![0; killer_moves_count]; max_ply], // [ply][slot]
             history: [[[0; 64]; 6]; 2],
         }
     }
 
     /// Create search with reasonable defaults
     pub fn with_board(board: Board) -> Self {
-        let params = SearchParams::new()
-            .max_depth(8)
-            .time_limit(5000);
+        let params = SearchParams::new().max_depth(8).time_limit(5000);
         Self::new(board, 16, params)
     }
 
@@ -106,16 +105,42 @@ impl Search {
         let mut best_move = 0;
         let mut best_score = -INFINITE;
 
-        // Iterative deepening
+        // Iterative deepening with aspiration windows
         for depth in 1..=max_depth {
-            let (mv, score) = self.iddfs(depth, best_move, -INFINITE, INFINITE);
+            // Use aspiration window after depth 1 (we need a baseline score)
+            if depth <= 1 {
+                // First depth: full window search
+                let (mv, score) = self.iddfs(depth, best_move, -INFINITE, INFINITE);
+                best_move = mv;
+                best_score = score;
+            } else {
+                // Use aspiration window around previous best score
+                let window = self.params.aspiration_window;
+                let mut alpha = best_score.saturating_sub(window);
+                let mut beta = best_score.saturating_add(window);
+                let mut search_result = self.iddfs(depth, best_move, alpha, beta);
+                let (mut mv, mut score) = search_result;
 
-            // Update best move and score
-            best_move = mv;
-            best_score = score;
+                // If score fell outside window, we need to re-search with wider window
+                if score <= alpha {
+                    // Failed low - re-search with lower bound
+                    alpha = -INFINITE;
+                    search_result = self.iddfs(depth, best_move, alpha, beta);
+                    (mv, score) = search_result;
+                } else if score >= beta {
+                    // Failed high - re-search with upper bound
+                    beta = INFINITE;
+                    search_result = self.iddfs(depth, best_move, alpha, beta);
+                    (mv, score) = search_result;
+                }
+
+                // Update best move and score
+                best_move = mv;
+                best_score = score;
+            }
 
             // If we found mate, we can stop searching for deeper mates
-            if score >= MATE {
+            if best_score >= MATE {
                 break;
             }
         }
@@ -138,8 +163,14 @@ impl Search {
 
         // Iterative deepening with time control
         for depth in 1..=max_depth {
-            if time_limit > 0 && self.stats.current_time.unwrap_or(self.stats.start_time.unwrap()).elapsed()
-                > std::time::Duration::from_millis(time_limit) {
+            if time_limit > 0
+                && self
+                    .stats
+                    .current_time
+                    .unwrap_or(self.stats.start_time.unwrap())
+                    .elapsed()
+                    > std::time::Duration::from_millis(time_limit)
+            {
                 break;
             }
 
@@ -152,7 +183,8 @@ impl Search {
             }
 
             // Update best move and score
-            if depth >= 4 { // Don't update for very shallow searches
+            if depth >= 4 {
+                // Don't update for very shallow searches
                 best_move = mv;
                 best_score = score;
             }
@@ -217,7 +249,8 @@ impl Search {
 
         // Store in transposition table
         let key = self.board.recalc_zobrist();
-        self.tt.store(key, best_score, depth, NodeType::Exact, best_root_move);
+        self.tt
+            .store(key, best_score, depth, NodeType::Exact, best_root_move);
         self.stats.inc_tt_entry();
         // Store recorded in stats above.
 
@@ -232,6 +265,7 @@ impl Search {
         // Check transposition table
         let key = self.board.recalc_zobrist();
         if let Some(entry) = self.tt.probe(key) {
+            self.stats.inc_tt_hit();
             if entry.depth >= depth {
                 let (entry_alpha, entry_beta) = entry.bound();
                 if entry_beta <= alpha {
@@ -248,8 +282,8 @@ impl Search {
             return self.static_eval();
         }
 
-        // Generate moves
-        let moves = self.board.generate_moves();
+        // Generate and order moves
+        let mut moves = self.board.generate_moves();
         if moves.is_empty() {
             // In checkmate or stalemate
             if self.is_in_check() {
@@ -258,6 +292,70 @@ impl Search {
                 return 0; // Stalemate
             }
         }
+
+        // Move ordering with TT, captures, killers, and history
+        let mut tt_move = None;
+        let key = self.board.recalc_zobrist();
+        if let Some(entry) = self.tt.probe(key) {
+            if entry.best_move != 0 {
+                tt_move = Some(entry.best_move);
+            }
+        }
+
+        moves.sort_by(|&a, &b| {
+            // TT move first
+            if let Some(tt_mv) = tt_move {
+                if a == tt_mv && b != tt_mv {
+                    return std::cmp::Ordering::Less;
+                }
+                if b == tt_mv && a != tt_mv {
+                    return std::cmp::Ordering::Greater;
+                }
+            }
+
+            let a_capture = move_flag(a, 0x40);
+            let b_capture = move_flag(b, 0x40);
+
+            match (a_capture, b_capture) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                (true, true) => {
+                    // MVV-LVA for captures
+                    let a_to = move_to_sq(a);
+                    let b_to = move_to_sq(b);
+
+                    let a_victim_value = if let Some((kind, _)) = self.board.piece_on(a_to) {
+                        self.piece_value(&kind)
+                    } else {
+                        0
+                    };
+
+                    let b_victim_value = if let Some((kind, _)) = self.board.piece_on(b_to) {
+                        self.piece_value(&kind)
+                    } else {
+                        0
+                    };
+
+                    b_victim_value.cmp(&a_victim_value)
+                }
+                (false, false) => {
+                    // Quiet moves - killer moves first
+                    let a_is_killer = self.is_killer_move(ply as usize, a);
+                    let b_is_killer = self.is_killer_move(ply as usize, b);
+
+                    match (a_is_killer, b_is_killer) {
+                        (true, false) => std::cmp::Ordering::Less,
+                        (false, true) => std::cmp::Ordering::Greater,
+                        (true, true) | (false, false) => {
+                            // History heuristic
+                            let a_history = self.get_history_score(a);
+                            let b_history = self.get_history_score(b);
+                            b_history.cmp(&a_history)
+                        }
+                    }
+                }
+            }
+        });
 
         let mut best = -INFINITE;
         let mut best_move = 0;
@@ -269,7 +367,13 @@ impl Search {
                 self.static_eval()
             } else {
                 // Recurse
-                -self.negamax_pv(depth - 1, -beta, -alpha, ply + 1)
+                let child_score = self.negamax_pv(depth - 1, -beta, -alpha, ply + 1);
+                // Handle potential overflow when negating
+                if child_score == i16::MIN {
+                    i16::MAX
+                } else {
+                    -child_score
+                }
             };
 
             self.board.unmake_move(undo);
@@ -279,7 +383,17 @@ impl Search {
                 best_move = mv;
                 if best > alpha {
                     alpha = best;
+                    // Update history for quiet moves that improve alpha
+                    if move_captured(mv).is_none() && !move_flag(mv, FLAG_PROMOTION) {
+                        self.update_history(mv, depth);
+                    }
                     if alpha >= beta {
+                        // Beta cutoff - store killer move if it's a non-capture and not TT move
+                        if move_captured(mv).is_none() {
+                            // Check if this move is not already stored as killer
+                            self.store_killer_move(ply as usize, mv);
+                        }
+                        self.stats.inc_cutoff();
                         break; // Beta cutoff
                     }
                 }
@@ -312,25 +426,71 @@ impl Search {
         // For now, just count material to avoid injection bugs
 
         // White material
-        let white_material = self.board.piece_bb(PieceKind::Pawn, Color::White).count_ones() * 100
-            + self.board.piece_bb(PieceKind::Knight, Color::White).count_ones() * 320
-            + self.board.piece_bb(PieceKind::Bishop, Color::White).count_ones() * 330
-            + self.board.piece_bb(PieceKind::Rook, Color::White).count_ones() * 500
-            + self.board.piece_bb(PieceKind::Queen, Color::White).count_ones() * 900;
+        let white_material = self
+            .board
+            .piece_bb(PieceKind::Pawn, Color::White)
+            .count_ones()
+            * 100
+            + self
+                .board
+                .piece_bb(PieceKind::Knight, Color::White)
+                .count_ones()
+                * 320
+            + self
+                .board
+                .piece_bb(PieceKind::Bishop, Color::White)
+                .count_ones()
+                * 330
+            + self
+                .board
+                .piece_bb(PieceKind::Rook, Color::White)
+                .count_ones()
+                * 500
+            + self
+                .board
+                .piece_bb(PieceKind::Queen, Color::White)
+                .count_ones()
+                * 900;
 
         // Black material
-        let black_material = self.board.piece_bb(PieceKind::Pawn, Color::Black).count_ones() * 100
-            + self.board.piece_bb(PieceKind::Knight, Color::Black).count_ones() * 320
-            + self.board.piece_bb(PieceKind::Bishop, Color::Black).count_ones() * 330
-            + self.board.piece_bb(PieceKind::Rook, Color::Black).count_ones() * 500
-            + self.board.piece_bb(PieceKind::Queen, Color::Black).count_ones() * 900;
+        let black_material = self
+            .board
+            .piece_bb(PieceKind::Pawn, Color::Black)
+            .count_ones()
+            * 100
+            + self
+                .board
+                .piece_bb(PieceKind::Knight, Color::Black)
+                .count_ones()
+                * 320
+            + self
+                .board
+                .piece_bb(PieceKind::Bishop, Color::Black)
+                .count_ones()
+                * 330
+            + self
+                .board
+                .piece_bb(PieceKind::Rook, Color::Black)
+                .count_ones()
+                * 500
+            + self
+                .board
+                .piece_bb(PieceKind::Queen, Color::Black)
+                .count_ones()
+                * 900;
 
         // King values are so high they might overflow, handle separately
-        let white_kings = self.board.piece_bb(PieceKind::King, Color::White).count_ones() as i16;
-        let black_kings = self.board.piece_bb(PieceKind::King, Color::Black).count_ones() as i16;
+        let white_kings = self
+            .board
+            .piece_bb(PieceKind::King, Color::White)
+            .count_ones() as i16;
+        let black_kings = self
+            .board
+            .piece_bb(PieceKind::King, Color::Black)
+            .count_ones() as i16;
 
-        let material_score = (white_material as i16 - black_material as i16)
-            + (white_kings - black_kings) * 20000;
+        let material_score =
+            (white_material as i16 - black_material as i16) + (white_kings - black_kings) * 20000;
 
         // If it's black to move, invert the score
         if self.board.side == Color::Black {
@@ -350,14 +510,17 @@ impl Search {
         self.board.is_square_attacked(king_sq, opponent)
     }
 
-    /// Generate root moves with basic ordering
+    /// Generate root moves with enhanced ordering including killer moves and history
     fn generate_root_moves(&mut self) -> Vec<Move> {
         let mut moves = self.board.generate_moves();
 
         // Try TT move first if available
         let key = self.board.recalc_zobrist();
+        let mut tt_move = None;
         if let Some(entry) = self.tt.probe(key) {
             if entry.best_move != 0 {
+                tt_move = Some(entry.best_move);
+                self.stats.inc_tt_hit();
                 // Move TT-best move to front
                 if let Some(pos) = moves.iter().position(|&m| m == entry.best_move) {
                     moves.swap(0, pos);
@@ -365,8 +528,20 @@ impl Search {
             }
         }
 
-        // Simple MVV-LVA ordering for captures using move flag utilities
+        // Enhanced move ordering
+        let root_ply = 0; // Root moves are at ply 0
         moves.sort_by(|&a, &b| {
+            // Check for TT move first (highest priority)
+            if let Some(tt_mv) = tt_move {
+                if a == tt_mv && b != tt_mv {
+                    return std::cmp::Ordering::Less;
+                }
+                if b == tt_mv && a != tt_mv {
+                    return std::cmp::Ordering::Greater;
+                }
+            }
+
+            // Check for capture moves
             let a_capture = move_flag(a, 0x40); // Capture flag
             let b_capture = move_flag(b, 0x40);
 
@@ -374,21 +549,40 @@ impl Search {
                 (true, false) => std::cmp::Ordering::Less,
                 (false, true) => std::cmp::Ordering::Greater,
                 (true, true) => {
-                    // Both captures - order by victim value (using piece kind value)
+                    // Both captures - order by victim value (MVV-LVA)
                     let a_to = move_to_sq(a);
                     let b_to = move_to_sq(b);
 
                     let a_victim_value = if let Some((kind, _)) = self.board.piece_on(a_to) {
                         self.piece_value(&kind)
-                    } else { 0 };
+                    } else {
+                        0
+                    };
 
                     let b_victim_value = if let Some((kind, _)) = self.board.piece_on(b_to) {
                         self.piece_value(&kind)
-                    } else { 0 };
+                    } else {
+                        0
+                    };
 
                     b_victim_value.cmp(&a_victim_value) // Reverse for highest first
-                },
-                (false, false) => std::cmp::Ordering::Equal,
+                }
+                (false, false) => {
+                    // Both quiet moves - check for killer moves
+                    let a_is_killer = self.is_killer_move(root_ply, a);
+                    let b_is_killer = self.is_killer_move(root_ply, b);
+
+                    match (a_is_killer, b_is_killer) {
+                        (true, false) => std::cmp::Ordering::Less,
+                        (false, true) => std::cmp::Ordering::Greater,
+                        (true, true) | (false, false) => {
+                            // Both killers or both non-killers - use history
+                            let a_history = self.get_history_score(a);
+                            let b_history = self.get_history_score(b);
+                            b_history.cmp(&a_history) // Reverse for highest first
+                        }
+                    }
+                }
             }
         });
 
@@ -407,6 +601,57 @@ impl Search {
         }
     }
 
+    /// Store a killer move at the given ply
+    fn store_killer_move(&mut self, ply: usize, mv: Move) {
+        if ply < self.killer_moves.len() {
+            let killers = &mut self.killer_moves[ply];
+
+            // If move is already stored, don't store again
+            if killers.contains(&mv) {
+                return;
+            }
+
+            // Shift existing killers and insert new one at front
+            killers.pop(); // Remove oldest if slots are full
+            killers.insert(0, mv);
+        }
+    }
+
+    /// Check if a move is a killer move at the current ply
+    fn is_killer_move(&self, ply: usize, mv: Move) -> bool {
+        if ply < self.killer_moves.len() {
+            self.killer_moves[ply].contains(&mv)
+        } else {
+            false
+        }
+    }
+
+    /// Get history score for a move
+    fn get_history_score(&self, mv: Move) -> i16 {
+        let color = self.board.side;
+        let piece = move_piece(mv);
+        let to_sq = move_to_sq(mv);
+
+        self.history[color as usize][piece as usize][to_sq]
+    }
+
+    /// Update history heuristic for a quiet move that improved alpha
+    fn update_history(&mut self, mv: Move, depth: u8) {
+        let color = self.board.side;
+        let piece = move_piece(mv);
+        let to_sq = move_to_sq(mv);
+
+        // Increment history by depth*depth (common weighting)
+        let bonus = (depth as i16) * (depth as i16);
+        self.history[color as usize][piece as usize][to_sq] += bonus;
+
+        // Clamp to avoid overflow
+        const HISTORY_MAX: i16 = 1000;
+        if self.history[color as usize][piece as usize][to_sq] > HISTORY_MAX {
+            self.history[color as usize][piece as usize][to_sq] = HISTORY_MAX;
+        }
+    }
+
     /// Get statistics summary for debugging
     pub fn print_stats(&self) {
         self.stats.print_summary();
@@ -417,7 +662,8 @@ impl Search {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::Board;
+    use crate::board::FLAG_PROMOTION;
+    use crate::board::{move_captured, move_flag, Board};
 
     #[test]
     fn test_search_creation() {
@@ -484,7 +730,9 @@ mod tests {
     #[test]
     fn test_aspiration_window_later() {
         let mut board = Board::new();
-        board.set_from_fen("r3k2r/p1ppppp/8/n1b1b1/b2n2q2p1P/P6NPPP/R3K2R w KQkq - 0 1").unwrap();
+        board
+            .set_from_fen("r3k2r/p1ppppp/8/n1b1b1/b2n2q2p1P/P6NPPP/R3K2R w KQkq - 0 1")
+            .unwrap();
 
         let mut search = Search::with_board(board);
 
@@ -495,5 +743,167 @@ mod tests {
         assert!(score > -INFINITE);
         // Stats should be recorded
         assert!(search.stats.nodes > 0);
+    }
+
+    #[test]
+    fn test_killer_moves_storage() {
+        // Create a position where a quiet move can cause a beta cutoff
+        let mut board = Board::new();
+        board
+            .set_from_fen("r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 1")
+            .unwrap();
+
+        let mut search = Search::new(board.clone(), 1, SearchParams::new().max_depth(4));
+
+        // Perform a search to generate some killer moves
+        let (_best_move, _score) = search.search(Some(3));
+
+        // Check that killer moves table is initialized properly
+        assert!(search.killer_moves.len() > 0);
+        assert!(search.killer_moves[0].len() >= 2); // Should have 2 slots as per params
+
+        // Test that we can store a killer move directly
+        let quiet_move = board
+            .generate_moves()
+            .iter()
+            .find(|&&m| move_captured(m).is_none() && !move_flag(m, FLAG_PROMOTION))
+            .copied()
+            .unwrap_or(0);
+
+        if quiet_move != 0 {
+            let initial_len = search.killer_moves[1].iter().filter(|&&m| m != 0).count();
+            search.store_killer_move(1, quiet_move);
+            let new_len = search.killer_moves[1].iter().filter(|&&m| m != 0).count();
+
+            // Should have stored the move
+            assert!(new_len >= initial_len);
+            assert!(search.is_killer_move(1, quiet_move));
+        }
+    }
+
+    #[test]
+    fn test_history_heuristic() {
+        let mut board = Board::new();
+        board
+            .set_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+            .unwrap();
+
+        let mut search = Search::with_board(board.clone());
+
+        // Get a quiet move to test history
+        let moves = board.generate_moves();
+        let quiet_move = moves
+            .iter()
+            .find(|&&m| move_captured(m).is_none() && !move_flag(m, FLAG_PROMOTION))
+            .copied()
+            .unwrap_or(0);
+
+        if quiet_move != 0 {
+            let initial_score = search.get_history_score(quiet_move);
+
+            // Update history
+            search.update_history(quiet_move, 3);
+
+            let updated_score = search.get_history_score(quiet_move);
+
+            // Should have increased
+            assert!(updated_score > initial_score);
+            // Should be depth*depth = 9 bonus
+            assert_eq!(updated_score - initial_score, 9);
+        }
+    }
+
+    #[test]
+    fn test_move_ordering_with_history_and_killer() {
+        let mut board = Board::new();
+        board
+            .set_from_fen("rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKB1R w KQkq - 0 1")
+            .unwrap();
+
+        let mut search = Search::with_board(board.clone());
+
+        // Store a killer move at ply 0
+        let moves = board.generate_moves();
+        let quiet_moves: Vec<Move> = moves
+            .iter()
+            .filter(|&&m| move_captured(m).is_none() && !move_flag(m, FLAG_PROMOTION))
+            .copied()
+            .collect();
+
+        if let Some(&killer_move) = quiet_moves.first() {
+            search.store_killer_move(0, killer_move);
+
+            // Update history for another quiet move
+            if let Some(&history_move) = quiet_moves.get(1) {
+                search.update_history(history_move, 2);
+            }
+
+            // Generate root moves and check ordering
+            let ordered_moves = search.generate_root_moves();
+
+            // The killer move should be among the first quiet moves in ordering
+            if ordered_moves.len() >= 2 {
+                let killer_pos = ordered_moves.iter().position(|&m| m == killer_move);
+                if let Some(pos) = killer_pos {
+                    // Killer should not be at the very end if there are quiet moves
+                    assert!(
+                        pos < ordered_moves.len() - 1
+                            || ordered_moves
+                                .iter()
+                                .take(pos)
+                                .all(|&m| move_captured(m).is_some())
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_aspiration_windows_basic() {
+        let mut board = Board::new();
+        board
+            .set_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+            .unwrap();
+
+        // Create search with small aspiration window
+        let mut search = Search::new(
+            board.clone(),
+            1,
+            SearchParams::new().max_depth(5).aspiration_window(30),
+        );
+
+        // Search should complete without crashing
+        let (best_move, score) = search.search(Some(3));
+
+        // Should find some move with a reasonable score
+        assert!(best_move != 0 || score != -INFINITE);
+        println!(
+            "Aspiration windows test: best_move={}, score={}",
+            best_move, score
+        );
+    }
+
+    #[test]
+    fn test_aspiration_windows_failed_high_low() {
+        // Position with tactical complexities that might cause window failures
+        let mut board = Board::new();
+        board
+            .set_from_fen("r3k2r/ppp2ppp/2n1q3/2b1p3/2B1P3/3P1N2/PPP2PPP/RN2K2R w KQkq - 0 8")
+            .unwrap();
+
+        let mut search = Search::new(
+            board.clone(),
+            1,
+            SearchParams::new().max_depth(4).aspiration_window(20),
+        ); // Small window to trigger failed high/low
+
+        let (best_move, score) = search.search(Some(4));
+
+        // Should complete without crashing
+        assert!(best_move != 0 || score != -INFINITE);
+        println!(
+            "Aspiration windows complex test: best_move={}, score={}",
+            best_move, score
+        );
     }
 }

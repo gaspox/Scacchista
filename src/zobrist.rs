@@ -16,11 +16,14 @@ fn split_mix64(x: u64) -> u64 {
 }
 pub fn init_zobrist() {
     unsafe {
-        if INITIALIZED { return; }
+        if INITIALIZED {
+            return;
+        }
         // Initialize piece-square keys
         for i in 0..12 {
             for j in 0..64 {
-                ZOB_PIECE[i][j] = split_mix64((i as u64).wrapping_mul(0xad3) + (j as u64).wrapping_mul(0x47a1));
+                ZOB_PIECE[i][j] =
+                    split_mix64((i as u64).wrapping_mul(0xad3) + (j as u64).wrapping_mul(0x47a1));
             }
         }
         // Side to move key
@@ -41,7 +44,9 @@ fn piece_index(kind: PieceKind, color: Color) -> usize {
 }
 pub fn recalc_zobrist_full(board: &Board) -> u64 {
     unsafe {
-        if !INITIALIZED { init_zobrist(); }
+        if !INITIALIZED {
+            init_zobrist();
+        }
         let mut h = 0u64;
         // Piece contribution
         for kind_index in 0..6 {
@@ -63,7 +68,9 @@ pub fn recalc_zobrist_full(board: &Board) -> u64 {
             }
         }
         // Side to move
-        if board.side == Color::Black { h ^= ZOB_SIDE; }
+        if board.side == Color::Black {
+            h ^= ZOB_SIDE;
+        }
         // Castling rights (bits mapping as in board struct)
         h ^= ZOB_CASTLING[board.castling as usize];
         // En-passant file (0 if None)

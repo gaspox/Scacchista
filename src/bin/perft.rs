@@ -1,9 +1,9 @@
 use clap::Parser;
-use scacchista::board::{Board, START_FEN, PieceKind, Color, move_from_sq, move_to_sq, move_piece};
-use scacchista::board::Move as MoveType; // explicit alias for type in function signatures
+use scacchista::board::Move as MoveType;
+use scacchista::board::{move_from_sq, move_piece, move_to_sq, Board, Color, PieceKind, START_FEN}; // explicit alias for type in function signatures
 
-use shakmaty::{Chess, Position};
-use shakmaty::fen::Fen;  // used when parsing non-start FEN
+use shakmaty::fen::Fen;
+use shakmaty::{Chess, Position}; // used when parsing non-start FEN
 
 use std::vec::Vec; // ensure Vec<Move> available in signature
 
@@ -18,7 +18,9 @@ struct Args {
     depth: u8,
 }
 fn perft_scacchista(board: &mut Board, depth: u8, path: &mut Vec<MoveType>) -> u64 {
-    if depth == 0 { return 1; }
+    if depth == 0 {
+        return 1;
+    }
     let moves = board.generate_moves();
     let mut nodes = 0u64;
     for mv in moves {
@@ -31,7 +33,7 @@ fn perft_scacchista(board: &mut Board, depth: u8, path: &mut Vec<MoveType>) -> u
         let pseudo_len = pseudo.len();
         let legal_len = board.generate_moves().len();
 
-        let child = perft_scacchista(board, depth-1, path);
+        let child = perft_scacchista(board, depth - 1, path);
         nodes += child;
         if depth == 4 {
             let from = move_from_sq(mv);
@@ -42,12 +44,21 @@ fn perft_scacchista(board: &mut Board, depth: u8, path: &mut Vec<MoveType>) -> u
                 // Print path
                 eprintln!("Path (root->current):");
                 for (i, pm) in path.iter().enumerate() {
-                    eprintln!("  {}: {}->{} ({:?})", i+1, move_from_sq(*pm), move_to_sq(*pm), move_piece(*pm));
+                    eprintln!(
+                        "  {}: {}->{} ({:?})",
+                        i + 1,
+                        move_from_sq(*pm),
+                        move_to_sq(*pm),
+                        move_piece(*pm)
+                    );
                 }
                 // Print board position after make
                 eprintln!("FEN-like board:\n{}", board);
                 eprintln!("Zobrist: 0x{:x}", board.recalc_zobrist());
-                eprintln!("white_occ={:x} black_occ={:x} occ={:x}", board.white_occ, board.black_occ, board.occ);
+                eprintln!(
+                    "white_occ={:x} black_occ={:x} occ={:x}",
+                    board.white_occ, board.black_occ, board.occ
+                );
 
                 // Dump pseudo moves
                 eprintln!("Pseudo moves (count={}):", pseudo_len);
@@ -55,7 +66,7 @@ fn perft_scacchista(board: &mut Board, depth: u8, path: &mut Vec<MoveType>) -> u
                     let pf = move_from_sq(*pmv);
                     let pt = move_to_sq(*pmv);
                     let pp = move_piece(*pmv);
-                    eprintln!("  {}: {}->{} ({:?})", i+1, pf, pt, pp);
+                    eprintln!("  {}: {}->{} ({:?})", i + 1, pf, pt, pp);
                 }
 
                 // Dump legal moves from this position
@@ -65,7 +76,7 @@ fn perft_scacchista(board: &mut Board, depth: u8, path: &mut Vec<MoveType>) -> u
                     let lf = move_from_sq(*lm);
                     let lt = move_to_sq(*lm);
                     let lp = move_piece(*lm);
-                    eprintln!("  {}: {}->{} ({:?})", i+1, lf, lt, lp);
+                    eprintln!("  {}: {}->{} ({:?})", i + 1, lf, lt, lp);
                 }
 
                 // Additional invariants: recompute occupancy from piece bitboards
@@ -76,23 +87,40 @@ fn perft_scacchista(board: &mut Board, depth: u8, path: &mut Vec<MoveType>) -> u
                     recomputed_black |= board.piece_bb_raw(kind + 6);
                 }
                 let recomputed_all = recomputed_white | recomputed_black;
-                eprintln!("Recomputed occ white={:x} black={:x} all={:x}", recomputed_white, recomputed_black, recomputed_all);
-                if recomputed_white != board.white_occ || recomputed_black != board.black_occ || recomputed_all != board.occ {
+                eprintln!(
+                    "Recomputed occ white={:x} black={:x} all={:x}",
+                    recomputed_white, recomputed_black, recomputed_all
+                );
+                if recomputed_white != board.white_occ
+                    || recomputed_black != board.black_occ
+                    || recomputed_all != board.occ
+                {
                     eprintln!("OCCUPANCY MISMATCH detected!");
                 }
 
                 // Check king squares and presence
                 let wking_sq = board.white_king_sq as usize;
                 let bking_sq = board.black_king_sq as usize;
-                eprintln!("White king sq: {} piece_on: {:?}", wking_sq, board.piece_on(wking_sq));
-                eprintln!("Black king sq: {} piece_on: {:?}", bking_sq, board.piece_on(bking_sq));
+                eprintln!(
+                    "White king sq: {} piece_on: {:?}",
+                    wking_sq,
+                    board.piece_on(wking_sq)
+                );
+                eprintln!(
+                    "Black king sq: {} piece_on: {:?}",
+                    bking_sq,
+                    board.piece_on(bking_sq)
+                );
 
                 eprintln!("==== END DUMP ====");
 
                 // Stop early so we can inspect the output
                 std::process::exit(1);
             } else {
-                eprintln!("ROOT MOVE {}->{} ({:?}) -> {} nodes (pseudo={}, legal={})", from, to, piece, child, pseudo_len, legal_len);
+                eprintln!(
+                    "ROOT MOVE {}->{} ({:?}) -> {} nodes (pseudo={}, legal={})",
+                    from, to, piece, child, pseudo_len, legal_len
+                );
             }
         }
         board.unmake_move(undo);
@@ -104,12 +132,14 @@ fn perft_scacchista(board: &mut Board, depth: u8, path: &mut Vec<MoveType>) -> u
     nodes
 }
 fn perft_shakmaty(pos: &Chess, depth: u8) -> u64 {
-    if depth == 0 { return 1; }
+    if depth == 0 {
+        return 1;
+    }
     let mut nodes = 0;
     for m in pos.legal_moves() {
         let mut new_pos = pos.clone();
         new_pos.play_unchecked(&m);
-        nodes += perft_shakmaty(&new_pos, depth-1);
+        nodes += perft_shakmaty(&new_pos, depth - 1);
     }
     nodes
 }
@@ -140,7 +170,14 @@ fn main() {
     board.set_from_fen(&args.fen).unwrap();
     let start = std::time::Instant::now();
     // Debug: dump piece bitboards at root
-    for kind in &[PieceKind::Pawn, PieceKind::Knight, PieceKind::Bishop, PieceKind::Rook, PieceKind::Queen, PieceKind::King] {
+    for kind in &[
+        PieceKind::Pawn,
+        PieceKind::Knight,
+        PieceKind::Bishop,
+        PieceKind::Rook,
+        PieceKind::Queen,
+        PieceKind::King,
+    ] {
         let wbb = board.piece_bb(*kind, Color::White);
         let bbb = board.piece_bb(*kind, Color::Black);
         eprintln!("piece {:?} white bb: {:x} black bb: {:x}", kind, wbb, bbb);
@@ -148,14 +185,28 @@ fn main() {
     let mut path: Vec<MoveType> = Vec::new();
     let nodes_sc = perft_scacchista(&mut board, args.depth, &mut path);
 
-
     let dur_sc = start.elapsed();
 
-    println!("Shakmaty perft({}) = {} nodes ({} ms, {:.2} Mnps)", args.depth, nodes_sh, dur_sh.as_millis(), nodes_sh as f64 / (dur_sh.as_micros() as f64));
-    println!("Scacchista perft({}) = {} nodes ({} ms, {:.2} Mnps)", args.depth, nodes_sc, dur_sc.as_millis(), nodes_sc as f64 / (dur_sc.as_micros() as f64));
+    println!(
+        "Shakmaty perft({}) = {} nodes ({} ms, {:.2} Mnps)",
+        args.depth,
+        nodes_sh,
+        dur_sh.as_millis(),
+        nodes_sh as f64 / (dur_sh.as_micros() as f64)
+    );
+    println!(
+        "Scacchista perft({}) = {} nodes ({} ms, {:.2} Mnps)",
+        args.depth,
+        nodes_sc,
+        dur_sc.as_millis(),
+        nodes_sc as f64 / (dur_sc.as_micros() as f64)
+    );
     if nodes_sh == nodes_sc {
         println!("✅ Counts match!");
     } else {
-        println!("Mismatch difference = {}", (nodes_sc as i64) - (nodes_sh as i64));
+        println!(
+            "Mismatch difference = {}",
+            (nodes_sc as i64) - (nodes_sh as i64)
+        );
     }
 }

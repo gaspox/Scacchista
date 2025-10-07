@@ -1,12 +1,12 @@
 pub mod board;
-pub mod zobrist;
+pub mod search;
 pub mod utils;
-pub mod search; // Scacchista search module (was MyRustChessEngine search)
+pub mod zobrist; // Scacchista search module (was MyRustChessEngine search)
 
 // Re-export move utilities for the perft binary
 pub use board::{
-    move_from_sq, move_to_sq, move_piece, move_flag,
-    PieceKind, Color, Board
+    move_captured, move_flag, move_from_sq, move_piece, move_to_sq, Board, Color, PieceKind,
+    FLAG_PROMOTION,
 };
 
 pub fn init() {

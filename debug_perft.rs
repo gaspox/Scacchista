@@ -1,7 +1,7 @@
 use clap::Parser;
 use scacchista::board::{Board, START_FEN};
-use shakmaty::{Chess, Position};
 use shakmaty::fen::Fen;
+use shakmaty::{Chess, Position};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -13,7 +13,9 @@ struct Args {
 }
 
 fn perft_debug(board: &mut Board, depth: u8) -> (u64, Vec<(String, u64)>) {
-    if depth == 0 { return (1, Vec::new()); }
+    if depth == 0 {
+        return (1, Vec::new());
+    }
 
     let moves = board.generate_moves();
     let mut total_nodes = 0u64;
@@ -37,9 +39,15 @@ fn perft_debug(board: &mut Board, depth: u8) -> (u64, Vec<(String, u64)>) {
             scacchista::board::PieceKind::King => "K",
         };
 
-        let mv_str = format!("{}{}{}{}", piece_char, files[from % 8], ranks[7 - (from / 8)], files[to % 8]);
+        let mv_str = format!(
+            "{}{}{}{}",
+            piece_char,
+            files[from % 8],
+            ranks[7 - (from / 8)],
+            files[to % 8]
+        );
         let undo = board.make_move(mv);
-        let (nodes, _) = perft_debug(board, depth-1);
+        let (nodes, _) = perft_debug(board, depth - 1);
         board.unmake_move(undo);
 
         total_nodes += nodes;
@@ -50,7 +58,9 @@ fn perft_debug(board: &mut Board, depth: u8) -> (u64, Vec<(String, u64)>) {
 }
 
 fn perft_debug_shakmaty(pos: &Chess, depth: u8) -> (u64, Vec<(String, u64)>) {
-    if depth == 0 { return (1, Vec::new()); }
+    if depth == 0 {
+        return (1, Vec::new());
+    }
 
     let mut total_nodes = 0u64;
     let mut move_counts = Vec::new();
@@ -59,7 +69,7 @@ fn perft_debug_shakmaty(pos: &Chess, depth: u8) -> (u64, Vec<(String, u64)>) {
         let mv_str = format!("{}", m);
         let mut new_pos = pos.clone();
         new_pos.play_unchecked(&m);
-        let (nodes, _) = perft_debug_shakmaty(&new_pos, depth-1);
+        let (nodes, _) = perft_debug_shakmaty(&new_pos, depth - 1);
 
         total_nodes += nodes;
         move_counts.push((mv_str, nodes));
@@ -68,14 +78,16 @@ fn perft_debug_shakmaty(pos: &Chess, depth: u8) -> (u64, Vec<(String, u64)>) {
     (total_nodes, move_counts)
 }
 
-
 fn main() {
     scacchista::init();
     scacchista::utils::init_attack_tables();
 
     let args = Args::parse();
 
-    println!("Running debug perft on FEN: '{}' at depth {}", args.fen, args.depth);
+    println!(
+        "Running debug perft on FEN: '{}' at depth {}",
+        args.fen, args.depth
+    );
 
     // Shakmaty
     let pos: Chess = if args.fen != START_FEN {
@@ -107,7 +119,10 @@ fn main() {
     if nodes_sh == nodes_sc {
         println!("\n✅ Counts match!");
     } else {
-        println!("\n❌ Mismatch! difference = {}", (nodes_sc as i64) - (nodes_sh as i64));
+        println!(
+            "\n❌ Mismatch! difference = {}",
+            (nodes_sc as i64) - (nodes_sh as i64)
+        );
 
         // Find mismatches
         println!("\nMove comparison:");

@@ -11,7 +11,10 @@ fn main() {
     println!("Side to move: {:?}", board.side);
 
     // Check white pawn positions
-    let white_pawns = board.piece_bb(scacchista::board::PieceKind::Pawn, scacchista::board::Color::White);
+    let white_pawns = board.piece_bb(
+        scacchista::board::PieceKind::Pawn,
+        scacchista::board::Color::White,
+    );
     println!("White pawn bitboard: {:064b}", white_pawns);
 
     // Print white pawn squares
@@ -21,11 +24,17 @@ fn main() {
         let rank = (7 - (sq / 8)) as u8; // Convert to chess notation
         let file_char = (b'a' + file) as char;
         let rank_char = (b'1' + rank) as char;
-        println!("White pawn at {}{} (internal index: {})", file_char, rank_char, sq);
+        println!(
+            "White pawn at {}{} (internal index: {})",
+            file_char, rank_char, sq
+        );
     }
 
     // Check black pawn positions
-    let black_pawns = board.piece_bb(scacchista::board::PieceKind::Pawn, scacchista::board::Color::Black);
+    let black_pawns = board.piece_bb(
+        scacchista::board::PieceKind::Pawn,
+        scacchista::board::Color::Black,
+    );
     println!("Black pawn bitboard: {:064b}", black_pawns);
 
     // Print black pawn squares
@@ -35,7 +44,10 @@ fn main() {
         let rank = (7 - (sq / 8)) as u8; // Convert to chess notation
         let file_char = (b'a' + file) as char;
         let rank_char = (b'1' + rank) as char;
-        println!("Black pawn at {}{} (internal index: {})", file_char, rank_char, sq);
+        println!(
+            "Black pawn at {}{} (internal index: {})",
+            file_char, rank_char, sq
+        );
     }
 
     // Test move generation
@@ -57,8 +69,10 @@ fn main() {
         let to_file_char = (b'a' + to_file) as char;
         let to_rank_char = (b'1' + to_rank) as char;
 
-        println!("Move {}: {:?} {}{} -> {}{}", i, piece,
-                from_file_char, from_rank_char, to_file_char, to_rank_char);
+        println!(
+            "Move {}: {:?} {}{} -> {}{}",
+            i, piece, from_file_char, from_rank_char, to_file_char, to_rank_char
+        );
     }
 
     if moves.len() > 5 {

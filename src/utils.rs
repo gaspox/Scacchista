@@ -66,7 +66,9 @@ impl Iterator for BitIter {
     }
 }
 #[inline]
-pub fn iter_bits(bb: u64) -> BitIter { BitIter { bb } }
+pub fn iter_bits(bb: u64) -> BitIter {
+    BitIter { bb }
+}
 
 // Precomputed attack tables using OnceLock for thread safety
 use std::sync::OnceLock;
@@ -76,8 +78,14 @@ static KING_ATTACKS: OnceLock<[u64; 64]> = OnceLock::new();
 
 fn init_knight_attacks() -> [u64; 64] {
     const KNIGHT_OFFSETS: [(i8, i8); 8] = [
-        (-2, -1), (-2, 1), (-1, -2), (-1, 2),
-        (1, -2), (1, 2), (2, -1), (2, 1)
+        (-2, -1),
+        (-2, 1),
+        (-1, -2),
+        (-1, 2),
+        (1, -2),
+        (1, 2),
+        (2, -1),
+        (2, 1),
     ];
     let mut attacks = [0u64; 64];
 
@@ -101,9 +109,14 @@ fn init_knight_attacks() -> [u64; 64] {
 
 fn init_king_attacks() -> [u64; 64] {
     const KING_OFFSETS: [(i8, i8); 8] = [
-        (-1, -1), (-1, 0), (-1, 1),
-        (0, -1),           (0, 1),
-        (1, -1),  (1, 0),  (1, 1)
+        (-1, -1),
+        (-1, 0),
+        (-1, 1),
+        (0, -1),
+        (0, 1),
+        (1, -1),
+        (1, 0),
+        (1, 1),
     ];
     let mut attacks = [0u64; 64];
 

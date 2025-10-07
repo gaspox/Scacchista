@@ -130,11 +130,14 @@ impl SearchStats {
         println!("Nodes searched: {}", self.nodes);
         println!("Root nodes: {}", self.root_nodes);
         println!("QSearch nodes: {}", self.qsearch_nodes);
-        println!("TT hits: {} ({:.1}%)",
+        println!(
+            "TT hits: {} ({:.1}%)",
             self.tt_hits,
             if self.tt_entries > 0 {
                 (self.tt_hits as f64 / self.tt_entries as f64) * 100.0
-            } else { 0.0 }
+            } else {
+                0.0
+            }
         );
         println!("Alpha-Beta cutoffs: {}", self.cutoffs);
         println!("Null-move cutoffs: {}", self.null_move_cutoffs);
@@ -145,7 +148,9 @@ impl SearchStats {
 
         let avg_depth = if self.root_nodes > 0 {
             self.nodes as f64 / self.root_nodes as f64
-        } else { 0.0 };
+        } else {
+            0.0
+        };
         println!("Average depth: {:.2}", avg_depth);
     }
 }

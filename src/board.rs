@@ -1,7 +1,6 @@
 // Mapping di quadrati: A1=0, B1=1, ..., H8=63
 // Usiamo questo mapping coerente per tutte le operazioni pipeline
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Color {
     White = 0,
@@ -39,21 +38,14 @@ pub const FLAG_CASTLE_QUEEN: u32 = 1 << 26;
 pub const FLAG_PROMOTION: u32 = 1 << 27;
 pub const FLAG_CAPTURE: u32 = 1 << 28;
 
-pub fn move_from_sq(m: Move) -> usize { (m & 0x3F) as usize }
-pub fn move_to_sq(m: Move) -> usize { ((m >> 6) & 0x3F) as usize }
-pub fn move_piece(m: Move) -> PieceKind { match (m >> 12) & 0xF {
-    0 => PieceKind::Pawn,
-    1 => PieceKind::Knight,
-    2 => PieceKind::Bishop,
-    3 => PieceKind::Rook,
-    4 => PieceKind::Queen,
-    5 => PieceKind::King,
-    _ => panic!(),
-}}
-pub fn move_captured(m: Move) -> Option<PieceKind> {
-    let v = (m >> 16) & 0xF;
-    if v == 0xF { None }
-    else { Some(match v {
+pub fn move_from_sq(m: Move) -> usize {
+    (m & 0x3F) as usize
+}
+pub fn move_to_sq(m: Move) -> usize {
+    ((m >> 6) & 0x3F) as usize
+}
+pub fn move_piece(m: Move) -> PieceKind {
+    match (m >> 12) & 0xF {
         0 => PieceKind::Pawn,
         1 => PieceKind::Knight,
         2 => PieceKind::Bishop,
@@ -61,25 +53,53 @@ pub fn move_captured(m: Move) -> Option<PieceKind> {
         4 => PieceKind::Queen,
         5 => PieceKind::King,
         _ => panic!(),
-    })}
+    }
+}
+pub fn move_captured(m: Move) -> Option<PieceKind> {
+    let v = (m >> 16) & 0xF;
+    if v == 0xF {
+        None
+    } else {
+        Some(match v {
+            0 => PieceKind::Pawn,
+            1 => PieceKind::Knight,
+            2 => PieceKind::Bishop,
+            3 => PieceKind::Rook,
+            4 => PieceKind::Queen,
+            5 => PieceKind::King,
+            _ => panic!(),
+        })
+    }
 }
 pub fn move_promotion(m: Move) -> Option<PieceKind> {
     let v = (m >> 20) & 0xF;
-    if v == 0xF { None }
-    else { Some(match v {
-        0 => PieceKind::Pawn,
-        1 => PieceKind::Knight,
-        2 => PieceKind::Bishop,
-        3 => PieceKind::Rook,
-        4 => PieceKind::Queen,
-        5 => PieceKind::King,
-        _ => panic!(),
-    })}
+    if v == 0xF {
+        None
+    } else {
+        Some(match v {
+            0 => PieceKind::Pawn,
+            1 => PieceKind::Knight,
+            2 => PieceKind::Bishop,
+            3 => PieceKind::Rook,
+            4 => PieceKind::Queen,
+            5 => PieceKind::King,
+            _ => panic!(),
+        })
+    }
 }
-pub fn move_flag(m: Move, flag: u32) -> bool { (m & flag) != 0 }
+pub fn move_flag(m: Move, flag: u32) -> bool {
+    (m & flag) != 0
+}
 
 // Costruzione mossa
-pub fn new_move(from: usize, to: usize, piece: PieceKind, captured: Option<PieceKind>, promotion: Option<PieceKind>, flags: u32) -> Move {
+pub fn new_move(
+    from: usize,
+    to: usize,
+    piece: PieceKind,
+    captured: Option<PieceKind>,
+    promotion: Option<PieceKind>,
+    flags: u32,
+) -> Move {
     let cap = captured.map(|p| p as u32).unwrap_or(0xF);
     let prom = promotion.map(|p| p as u32).unwrap_or(0xF);
     (from as u32 & 0x3F)
@@ -107,6 +127,7 @@ pub struct Undo {
     pub prev_zobrist: u64,
 }
 
+#[derive(Clone)]
 pub struct Board {
     // 12 bitboard: 0-5 = white p,n,b,r,q,k; 6-11 = black p,n,b,r,q,k
     piece_bb: [u64; 12],
@@ -114,7 +135,7 @@ pub struct Board {
     pub black_occ: u64,
     pub occ: u64,
     pub side: Color,
-    pub castling: u8, // 4 LSB: white kingside, white queenside, black ks, black qs
+    pub castling: u8,   // 4 LSB: white kingside, white queenside, black ks, black qs
     pub ep: Option<u8>, // en-passant square index or None
     pub halfmove: u16,
     pub fullmove: u16,
@@ -152,7 +173,9 @@ impl Board {
     }
 
     // Helper accesso raw bb per rendering/debug
-    pub fn piece_bb_raw(&self, idx: usize) -> u64 { self.piece_bb[idx] }
+    pub fn piece_bb_raw(&self, idx: usize) -> u64 {
+        self.piece_bb[idx]
+    }
 
     // Restituisce piece (kind,color) su square idx o None
     pub fn piece_on(&self, sq: usize) -> Option<(PieceKind, Color)> {
@@ -211,7 +234,9 @@ impl Board {
     }
 
     // Verifica se un quadrato è occupato
-    pub fn is_occupied(&self, sq: usize) -> bool { (1u64 << sq & self.occ) != 0 }
+    pub fn is_occupied(&self, sq: usize) -> bool {
+        (1u64 << sq & self.occ) != 0
+    }
 
     // King square per side
     pub fn king_sq(&self, side: Color) -> usize {
@@ -229,9 +254,17 @@ impl Board {
         let captured = move_captured(mv);
         let ep_target = self.ep;
 
-        let color = if self.white_occ & (1u64 << from) != 0 { Color::White } else { Color::Black };
+        let color = if self.white_occ & (1u64 << from) != 0 {
+            Color::White
+        } else {
+            Color::Black
+        };
         let captured_sq = if move_flag(mv, FLAG_EN_PASSANT) {
-            Some(if color == Color::White { (ep_target.unwrap() as i32) - 8 } else { (ep_target.unwrap() as i32) + 8 } as usize)
+            Some(if color == Color::White {
+                (ep_target.unwrap() as i32) - 8
+            } else {
+                (ep_target.unwrap() as i32) + 8
+            } as usize)
         } else if captured.is_some() {
             Some(to)
         } else {
@@ -257,12 +290,24 @@ impl Board {
             // Remove piece from old square
             self.zobrist ^= crate::zobrist::ZOB_PIECE[piece_index(piece, color)][from];
             // Add piece/moved piece or promoted piece
-            let moved = if move_flag(mv, FLAG_PROMOTION) { move_promotion(mv).unwrap() } else { piece };
+            let moved = if move_flag(mv, FLAG_PROMOTION) {
+                move_promotion(mv).unwrap()
+            } else {
+                piece
+            };
             self.zobrist ^= crate::zobrist::ZOB_PIECE[piece_index(moved, color)][to];
             // Remove captured or e-p captured
             if let Some(capt) = captured {
-                let cap_color = if color == Color::White { Color::Black } else { Color::White };
-                let cap_sq = if move_flag(mv, FLAG_EN_PASSANT) { captured_sq.unwrap() } else { to };
+                let cap_color = if color == Color::White {
+                    Color::Black
+                } else {
+                    Color::White
+                };
+                let cap_sq = if move_flag(mv, FLAG_EN_PASSANT) {
+                    captured_sq.unwrap()
+                } else {
+                    to
+                };
                 self.zobrist ^= crate::zobrist::ZOB_PIECE[piece_index(capt, cap_color)][cap_sq];
             }
             // Side toggle
@@ -282,10 +327,10 @@ impl Board {
                     self.zobrist ^= crate::zobrist::ZOB_EP_FILE[old_file];
                 }
                 let new_ep_sq = if piece == PieceKind::Pawn && to.abs_diff(from) == 16 {
-                Some(((from + to) / 2) as u8)
-            } else {
-                None
-            };
+                    Some(((from + to) / 2) as u8)
+                } else {
+                    None
+                };
                 if let Some(ep_sq) = new_ep_sq {
                     let file = (ep_sq % 8) as usize;
                     self.zobrist ^= crate::zobrist::ZOB_EP_FILE[file];
@@ -294,29 +339,65 @@ impl Board {
         }
         // Update piece/occupancy fields
         if piece == PieceKind::King {
-            if color == Color::White { self.white_king_sq = to as u8; } else { self.black_king_sq = to as u8; }
+            if color == Color::White {
+                self.white_king_sq = to as u8;
+            } else {
+                self.black_king_sq = to as u8;
+            }
         }
 
         self.remove_piece(from, piece, color);
         if let Some(capt) = captured {
             if move_flag(mv, FLAG_EN_PASSANT) {
-                self.remove_piece(captured_sq.unwrap(), capt, if color == Color::White { Color::Black } else { Color::White });
+                self.remove_piece(
+                    captured_sq.unwrap(),
+                    capt,
+                    if color == Color::White {
+                        Color::Black
+                    } else {
+                        Color::White
+                    },
+                );
             } else {
-                self.remove_piece(to, capt, if color == Color::White { Color::Black } else { Color::White });
+                self.remove_piece(
+                    to,
+                    capt,
+                    if color == Color::White {
+                        Color::Black
+                    } else {
+                        Color::White
+                    },
+                );
             }
         }
-        let moved_piece = if move_flag(mv, FLAG_PROMOTION) { move_promotion(mv).unwrap() } else { piece };
+        let moved_piece = if move_flag(mv, FLAG_PROMOTION) {
+            move_promotion(mv).unwrap()
+        } else {
+            piece
+        };
         self.set_piece(to, moved_piece, color);
         self.refresh_occupancy();
 
         // (debug checks removed)
         // Update en-passant flag
-        self.ep = if piece == PieceKind::Pawn && to.abs_diff(from) == 16 { Some(((from + to) / 2) as u8) } else { None };
+        self.ep = if piece == PieceKind::Pawn && to.abs_diff(from) == 16 {
+            Some(((from + to) / 2) as u8)
+        } else {
+            None
+        };
         // Update move counters
         self.halfmove += 1;
-        if piece == PieceKind::Pawn || captured.is_some() { self.halfmove = 0; }
-        self.side = if self.side == Color::White { Color::Black } else { Color::White };
-        if self.side == Color::White { self.fullmove += 1; }
+        if piece == PieceKind::Pawn || captured.is_some() {
+            self.halfmove = 0;
+        }
+        self.side = if self.side == Color::White {
+            Color::Black
+        } else {
+            Color::White
+        };
+        if self.side == Color::White {
+            self.fullmove += 1;
+        }
         undo
     }
 
@@ -345,7 +426,11 @@ impl Board {
 
         // Restore captured if any (captured piece belongs to the opponent)
         if let Some(capt) = undo.captured_piece {
-            let cap_color = if mover_color == Color::White { Color::Black } else { Color::White };
+            let cap_color = if mover_color == Color::White {
+                Color::Black
+            } else {
+                Color::White
+            };
             self.set_piece(undo.captured_sq.unwrap(), capt, cap_color);
         }
 
@@ -374,7 +459,6 @@ impl Board {
         }
     }
 
-
     // Public method to force recalc Zobrist
     pub fn recalc_zobrist(&self) -> u64 {
         crate::zobrist::recalc_zobrist_full(self)
@@ -385,25 +469,40 @@ impl Board {
         // Pawn attacks
         if by == Color::White {
             let white_pawns = self.piece_bb(PieceKind::Pawn, Color::White);
-            if ((white_pawns & crate::utils::NOT_FILE_A) << 7) & (1u64 << sq) != 0 { return true; }
-            if ((white_pawns & crate::utils::NOT_FILE_H) << 9) & (1u64 << sq) != 0 { return true; }
+            if ((white_pawns & crate::utils::NOT_FILE_A) << 7) & (1u64 << sq) != 0 {
+                return true;
+            }
+            if ((white_pawns & crate::utils::NOT_FILE_H) << 9) & (1u64 << sq) != 0 {
+                return true;
+            }
         } else {
             let black_pawns = self.piece_bb(PieceKind::Pawn, Color::Black);
-            if ((black_pawns & crate::utils::NOT_FILE_A) >> 9) & (1u64 << sq) != 0 { return true; }
-            if ((black_pawns & crate::utils::NOT_FILE_H) >> 7) & (1u64 << sq) != 0 { return true; }
+            if ((black_pawns & crate::utils::NOT_FILE_A) >> 9) & (1u64 << sq) != 0 {
+                return true;
+            }
+            if ((black_pawns & crate::utils::NOT_FILE_H) >> 7) & (1u64 << sq) != 0 {
+                return true;
+            }
         }
         // Knight attacks
-        if crate::utils::knight_attacks(sq) & self.piece_bb(PieceKind::Knight, by) != 0 { return true; }
+        if crate::utils::knight_attacks(sq) & self.piece_bb(PieceKind::Knight, by) != 0 {
+            return true;
+        }
         // King attacks
-        if crate::utils::king_attacks(sq) & self.piece_bb(PieceKind::King, by) != 0 { return true; }
+        if crate::utils::king_attacks(sq) & self.piece_bb(PieceKind::King, by) != 0 {
+            return true;
+        }
         // Bishop/Queen (diagonal sliding)
-        let diagonal_attackers = self.piece_bb(PieceKind::Bishop, by) | self.piece_bb(PieceKind::Queen, by);
+        let diagonal_attackers =
+            self.piece_bb(PieceKind::Bishop, by) | self.piece_bb(PieceKind::Queen, by);
         if diagonal_attackers != 0 {
             // northwest
             let mut s = sq as i8 - 9;
             while s >= 0 && (s % 8) != 7 {
                 if (1u64 << s) & self.occ != 0 {
-                    if (1u64 << s) & diagonal_attackers != 0 { return true; }
+                    if (1u64 << s) & diagonal_attackers != 0 {
+                        return true;
+                    }
                     break;
                 }
                 s -= 9;
@@ -412,7 +511,9 @@ impl Board {
             let mut s = sq as i8 - 7;
             while s >= 0 && (s % 8) != 0 {
                 if (1u64 << s) & self.occ != 0 {
-                    if (1u64 << s) & diagonal_attackers != 0 { return true; }
+                    if (1u64 << s) & diagonal_attackers != 0 {
+                        return true;
+                    }
                     break;
                 }
                 s -= 7;
@@ -421,7 +522,9 @@ impl Board {
             let mut s = sq as i8 + 7;
             while s < 64 && (s % 8) != 0 {
                 if (1u64 << s) & self.occ != 0 {
-                    if (1u64 << s) & diagonal_attackers != 0 { return true; }
+                    if (1u64 << s) & diagonal_attackers != 0 {
+                        return true;
+                    }
                     break;
                 }
                 s += 7;
@@ -430,20 +533,25 @@ impl Board {
             let mut s = sq as i8 + 9;
             while s < 64 && (s % 8) != 7 {
                 if (1u64 << s) & self.occ != 0 {
-                    if (1u64 << s) & diagonal_attackers != 0 { return true; }
+                    if (1u64 << s) & diagonal_attackers != 0 {
+                        return true;
+                    }
                     break;
                 }
                 s += 9;
             }
         }
         // Rook/Queen (orthogonal sliding)
-        let orthogonal_attackers = self.piece_bb(PieceKind::Rook, by) | self.piece_bb(PieceKind::Queen, by);
+        let orthogonal_attackers =
+            self.piece_bb(PieceKind::Rook, by) | self.piece_bb(PieceKind::Queen, by);
         if orthogonal_attackers != 0 {
             // north
             let mut s = (sq as i8) + 8;
             while s < 64 {
                 if (1u64 << s) & self.occ != 0 {
-                    if (1u64 << s) & orthogonal_attackers != 0 { return true; }
+                    if (1u64 << s) & orthogonal_attackers != 0 {
+                        return true;
+                    }
                     break;
                 }
                 s += 8;
@@ -452,7 +560,9 @@ impl Board {
             let mut s = (sq as i8) - 8;
             while s >= 0 {
                 if (1u64 << s) & self.occ != 0 {
-                    if (1u64 << s) & orthogonal_attackers != 0 { return true; }
+                    if (1u64 << s) & orthogonal_attackers != 0 {
+                        return true;
+                    }
                     break;
                 }
                 s -= 8;
@@ -462,7 +572,9 @@ impl Board {
                 let mut s = sq as i8 + 1;
                 while s % 8 != 0 {
                     if 1u64 << s & self.occ != 0 {
-                        if 1u64 << s & orthogonal_attackers != 0 { return true; }
+                        if 1u64 << s & orthogonal_attackers != 0 {
+                            return true;
+                        }
                         break;
                     }
                     s += 1;
@@ -473,7 +585,9 @@ impl Board {
                 let mut s = sq as i8 - 1;
                 while s >= 0 && s % 8 != 7 {
                     if (1u64 << s) & self.occ != 0 {
-                        if (1u64 << s) & orthogonal_attackers != 0 { return true; }
+                        if (1u64 << s) & orthogonal_attackers != 0 {
+                            return true;
+                        }
                         break;
                     }
                     s -= 1;
@@ -492,7 +606,11 @@ impl Board {
             let undo = self.make_move(mv);
             // After make_move, self.side is now the opponent
             let side_to_move = self.side;
-            let side_that_moved = if side_to_move == Color::White { Color::Black } else { Color::White };
+            let side_that_moved = if side_to_move == Color::White {
+                Color::Black
+            } else {
+                Color::White
+            };
             let own_king_sq = self.king_sq(side_that_moved);
             let is_attacked = self.is_square_attacked(own_king_sq, side_to_move);
             if !is_attacked {
@@ -566,15 +684,29 @@ impl Board {
             };
             let (_capsq, flags) = if ep_target.map_or(false, |ep| to == ep as usize) {
                 let ep_sq = ep_target.unwrap() as usize;
-                (match side {
-                    Color::White => (ep_sq as i32 - 8) as usize,
-                    Color::Black => (ep_sq as i32 + 8) as usize,
-                }, FLAG_EN_PASSANT | FLAG_CAPTURE)
+                (
+                    match side {
+                        Color::White => (ep_sq as i32 - 8) as usize,
+                        Color::Black => (ep_sq as i32 + 8) as usize,
+                    },
+                    FLAG_EN_PASSANT | FLAG_CAPTURE,
+                )
             } else {
                 (to, FLAG_CAPTURE)
             };
-            let captured_kind = if flags & FLAG_EN_PASSANT != 0 { PieceKind::Pawn } else { self.piece_on(to).unwrap().0 };
-            out.push(new_move(from, to, PieceKind::Pawn, Some(captured_kind), None, flags));
+            let captured_kind = if flags & FLAG_EN_PASSANT != 0 {
+                PieceKind::Pawn
+            } else {
+                self.piece_on(to).unwrap().0
+            };
+            out.push(new_move(
+                from,
+                to,
+                PieceKind::Pawn,
+                Some(captured_kind),
+                None,
+                flags,
+            ));
         }
         let left_capture = match side {
             Color::White => ((pawns & crate::utils::NOT_FILE_A) << 7) & enemy_occ,
@@ -588,15 +720,29 @@ impl Board {
             };
             let (_capsq, flags) = if ep_target.map_or(false, |ep| to == ep as usize) {
                 let ep_sq = ep_target.unwrap() as usize;
-                (match side {
-                    Color::White => (ep_sq as i32 - 8) as usize,
-                    Color::Black => (ep_sq as i32 + 8) as usize,
-                }, FLAG_EN_PASSANT | FLAG_CAPTURE)
+                (
+                    match side {
+                        Color::White => (ep_sq as i32 - 8) as usize,
+                        Color::Black => (ep_sq as i32 + 8) as usize,
+                    },
+                    FLAG_EN_PASSANT | FLAG_CAPTURE,
+                )
             } else {
                 (to, FLAG_CAPTURE)
             };
-            let captured_kind = if flags & FLAG_EN_PASSANT != 0 { PieceKind::Pawn } else { self.piece_on(to).unwrap().0 };
-            out.push(new_move(from, to, PieceKind::Pawn, Some(captured_kind), None, flags));
+            let captured_kind = if flags & FLAG_EN_PASSANT != 0 {
+                PieceKind::Pawn
+            } else {
+                self.piece_on(to).unwrap().0
+            };
+            out.push(new_move(
+                from,
+                to,
+                PieceKind::Pawn,
+                Some(captured_kind),
+                None,
+                flags,
+            ));
         }
         // Promotions (push and capture onto promotion rank)
         let promo_push_dest = push_dest & prom_rank;
@@ -606,8 +752,20 @@ impl Board {
                 Color::White => to - 8,
                 Color::Black => to + 8,
             };
-            for kind in [PieceKind::Queen, PieceKind::Rook, PieceKind::Bishop, PieceKind::Knight] {
-                out.push(new_move(from, to, PieceKind::Pawn, None, Some(kind), FLAG_PROMOTION));
+            for kind in [
+                PieceKind::Queen,
+                PieceKind::Rook,
+                PieceKind::Bishop,
+                PieceKind::Knight,
+            ] {
+                out.push(new_move(
+                    from,
+                    to,
+                    PieceKind::Pawn,
+                    None,
+                    Some(kind),
+                    FLAG_PROMOTION,
+                ));
             }
         }
         // Promo captures
@@ -621,8 +779,21 @@ impl Board {
                 Color::White => to - 9,
                 Color::Black => to + 7,
             };
-            for kind in [PieceKind::Queen, PieceKind::Rook, PieceKind::Bishop, PieceKind::Knight] {
-                let captured_kind = self.piece_on(to).unwrap().0; out.push(new_move(from, to, PieceKind::Pawn, Some(captured_kind), Some(kind), FLAG_PROMOTION | FLAG_CAPTURE));
+            for kind in [
+                PieceKind::Queen,
+                PieceKind::Rook,
+                PieceKind::Bishop,
+                PieceKind::Knight,
+            ] {
+                let captured_kind = self.piece_on(to).unwrap().0;
+                out.push(new_move(
+                    from,
+                    to,
+                    PieceKind::Pawn,
+                    Some(captured_kind),
+                    Some(kind),
+                    FLAG_PROMOTION | FLAG_CAPTURE,
+                ));
             }
         }
         let promo_capture_left = match side {
@@ -635,8 +806,21 @@ impl Board {
                 Color::White => to - 7,
                 Color::Black => to + 9,
             };
-            for kind in [PieceKind::Queen, PieceKind::Rook, PieceKind::Bishop, PieceKind::Knight] {
-                let captured_kind = self.piece_on(to).unwrap().0; out.push(new_move(from, to, PieceKind::Pawn, Some(captured_kind), Some(kind), FLAG_PROMOTION | FLAG_CAPTURE));
+            for kind in [
+                PieceKind::Queen,
+                PieceKind::Rook,
+                PieceKind::Bishop,
+                PieceKind::Knight,
+            ] {
+                let captured_kind = self.piece_on(to).unwrap().0;
+                out.push(new_move(
+                    from,
+                    to,
+                    PieceKind::Pawn,
+                    Some(captured_kind),
+                    Some(kind),
+                    FLAG_PROMOTION | FLAG_CAPTURE,
+                ));
             }
         }
     }
@@ -651,11 +835,22 @@ impl Board {
                 out.push(new_move(from, to, PieceKind::Knight, None, None, FLAG_NONE));
             }
             let mut capture_bb = attacks & {
-                if side == Color::White { self.black_occ } else { self.white_occ }
+                if side == Color::White {
+                    self.black_occ
+                } else {
+                    self.white_occ
+                }
             };
             while let Some(to) = crate::utils::pop_lsb(&mut capture_bb) {
                 let piece_on_to = self.piece_on(to).unwrap().0;
-                out.push(new_move(from, to, PieceKind::Knight, Some(piece_on_to), None, FLAG_CAPTURE));
+                out.push(new_move(
+                    from,
+                    to,
+                    PieceKind::Knight,
+                    Some(piece_on_to),
+                    None,
+                    FLAG_CAPTURE,
+                ));
             }
         }
     }
@@ -697,17 +892,35 @@ impl Board {
                     // Check if square is occupied
                     if self.is_occupied(to_usize) {
                         // If occupied by enemy, can capture
-                        let enemy_occ = if side == Color::White { self.black_occ } else { self.white_occ };
+                        let enemy_occ = if side == Color::White {
+                            self.black_occ
+                        } else {
+                            self.white_occ
+                        };
                         if ((1u64 << to) & enemy_occ) != 0 {
                             if let Some((piece_kind, _)) = self.piece_on(to_usize) {
-                                out.push(new_move(from, to_usize, PieceKind::Bishop, Some(piece_kind), None, FLAG_CAPTURE));
+                                out.push(new_move(
+                                    from,
+                                    to_usize,
+                                    PieceKind::Bishop,
+                                    Some(piece_kind),
+                                    None,
+                                    FLAG_CAPTURE,
+                                ));
                             }
                         }
                         break; // Stop sliding when we hit any piece
                     }
 
                     // Empty square - can move here
-                    out.push(new_move(from, to_usize, PieceKind::Bishop, None, None, FLAG_NONE));
+                    out.push(new_move(
+                        from,
+                        to_usize,
+                        PieceKind::Bishop,
+                        None,
+                        None,
+                        FLAG_NONE,
+                    ));
                 }
             }
         }
@@ -731,12 +944,18 @@ impl Board {
                     }
 
                     // Check board edge transitions for horizontal moves
-                    if dir == 1 { // East
+                    if dir == 1 {
+                        // East
                         let from_sq = to - dir;
-                        if from_sq >= 0 && (from_sq % 8) == 7 { break; } // Cannot wrap from H to A
-                    } else if dir == -1 { // West
+                        if from_sq >= 0 && (from_sq % 8) == 7 {
+                            break;
+                        } // Cannot wrap from H to A
+                    } else if dir == -1 {
+                        // West
                         let from_sq = to - dir;
-                        if from_sq >= 0 && (from_sq % 8) == 0 { break; } // Cannot wrap from A to H
+                        if from_sq >= 0 && (from_sq % 8) == 0 {
+                            break;
+                        } // Cannot wrap from A to H
                     }
 
                     let to_usize = to as usize;
@@ -744,17 +963,35 @@ impl Board {
                     // Check if square is occupied
                     if self.is_occupied(to_usize) {
                         // If occupied by enemy, can capture
-                        let enemy_occ = if side == Color::White { self.black_occ } else { self.white_occ };
+                        let enemy_occ = if side == Color::White {
+                            self.black_occ
+                        } else {
+                            self.white_occ
+                        };
                         if ((1u64 << to) & enemy_occ) != 0 {
                             if let Some((piece_kind, _)) = self.piece_on(to_usize) {
-                                out.push(new_move(from, to_usize, PieceKind::Rook, Some(piece_kind), None, FLAG_CAPTURE));
+                                out.push(new_move(
+                                    from,
+                                    to_usize,
+                                    PieceKind::Rook,
+                                    Some(piece_kind),
+                                    None,
+                                    FLAG_CAPTURE,
+                                ));
                             }
                         }
                         break; // Stop sliding when we hit any piece
                     }
 
                     // Empty square - can move here
-                    out.push(new_move(from, to_usize, PieceKind::Rook, None, None, FLAG_NONE));
+                    out.push(new_move(
+                        from,
+                        to_usize,
+                        PieceKind::Rook,
+                        None,
+                        None,
+                        FLAG_NONE,
+                    ));
                 }
             }
         }
@@ -786,12 +1023,36 @@ impl Board {
 
                     // Check wrapping issues
                     match dir {
-                        1 => { if from_file == 7 { break; } }      // East: cannot wrap H->A
-                        -1 => { if from_file == 0 { break; } }     // West: cannot wrap A->H
-                        9 => { if from_file == 7 { break; } }      // NE: cannot wrap H->A
-                        -9 => { if from_file == 0 { break; } }     // SW: cannot wrap A->H
-                        7 => { if from_file == 0 { break; } }      // NW: cannot wrap A->H
-                        -7 => { if from_file == 7 { break; } }     // SE: cannot wrap H->A
+                        1 => {
+                            if from_file == 7 {
+                                break;
+                            }
+                        } // East: cannot wrap H->A
+                        -1 => {
+                            if from_file == 0 {
+                                break;
+                            }
+                        } // West: cannot wrap A->H
+                        9 => {
+                            if from_file == 7 {
+                                break;
+                            }
+                        } // NE: cannot wrap H->A
+                        -9 => {
+                            if from_file == 0 {
+                                break;
+                            }
+                        } // SW: cannot wrap A->H
+                        7 => {
+                            if from_file == 0 {
+                                break;
+                            }
+                        } // NW: cannot wrap A->H
+                        -7 => {
+                            if from_file == 7 {
+                                break;
+                            }
+                        } // SE: cannot wrap H->A
                         _ => {} // N,S moves don't have file wrapping issues
                     }
 
@@ -800,17 +1061,35 @@ impl Board {
                     // Check if square is occupied
                     if self.is_occupied(to_usize) {
                         // If occupied by enemy, can capture
-                        let enemy_occ = if side == Color::White { self.black_occ } else { self.white_occ };
+                        let enemy_occ = if side == Color::White {
+                            self.black_occ
+                        } else {
+                            self.white_occ
+                        };
                         if ((1u64 << to) & enemy_occ) != 0 {
                             if let Some((piece_kind, _)) = self.piece_on(to_usize) {
-                                out.push(new_move(from, to_usize, PieceKind::Queen, Some(piece_kind), None, FLAG_CAPTURE));
+                                out.push(new_move(
+                                    from,
+                                    to_usize,
+                                    PieceKind::Queen,
+                                    Some(piece_kind),
+                                    None,
+                                    FLAG_CAPTURE,
+                                ));
                             }
                         }
                         break; // Stop sliding when we hit any piece
                     }
 
                     // Empty square - can move here
-                    out.push(new_move(from, to_usize, PieceKind::Queen, None, None, FLAG_NONE));
+                    out.push(new_move(
+                        from,
+                        to_usize,
+                        PieceKind::Queen,
+                        None,
+                        None,
+                        FLAG_NONE,
+                    ));
                 }
             }
         }
@@ -830,11 +1109,22 @@ impl Board {
             }
 
             // Captures
-            let enemy_occ = if side == Color::White { self.black_occ } else { self.white_occ };
+            let enemy_occ = if side == Color::White {
+                self.black_occ
+            } else {
+                self.white_occ
+            };
             let mut capture_bb = attacks & enemy_occ;
             while let Some(to) = crate::utils::pop_lsb(&mut capture_bb) {
                 if let Some((piece_kind, _)) = self.piece_on(to) {
-                    out.push(new_move(from, to, PieceKind::King, Some(piece_kind), None, FLAG_CAPTURE));
+                    out.push(new_move(
+                        from,
+                        to,
+                        PieceKind::King,
+                        Some(piece_kind),
+                        None,
+                        FLAG_CAPTURE,
+                    ));
                 }
             }
 
@@ -848,7 +1138,7 @@ impl Board {
         let castle_mask = if side == Color::White {
             0b1100u8 // White castling bits (4: K, 8: Q) but we use 8: K, 4: Q based on our mapping
         } else {
-            0b0011u8  // Black castling bits (2: k, 1: q) but we use 2: k, 1: q based on our mapping
+            0b0011u8 // Black castling bits (2: k, 1: q) but we use 2: k, 1: q based on our mapping
         };
 
         if (self.castling & castle_mask) == 0 {
@@ -861,10 +1151,18 @@ impl Board {
             return;
         }
 
-        let enemy_occ = if side == Color::White { self.black_occ } else { self.white_occ };
+        let enemy_occ = if side == Color::White {
+            self.black_occ
+        } else {
+            self.white_occ
+        };
 
         // Kingside castling
-        let ks_mask = if side == Color::White { 0b1000u8 } else { 0b0010u8 };
+        let ks_mask = if side == Color::White {
+            0b1000u8
+        } else {
+            0b0010u8
+        };
         if (self.castling & ks_mask) != 0 {
             let (rook_start, king_to, _rook_to) = if side == Color::White {
                 (7, 6, 5) // h1->f1, e1->g1, h1->f1
@@ -889,11 +1187,18 @@ impl Board {
             let mut path_safe = true;
             if squares_clear && rook_in_place {
                 let check_squares = match side {
-                    Color::White => [4, 5, 6], // e1, f1, g1
+                    Color::White => [4, 5, 6],    // e1, f1, g1
                     Color::Black => [60, 61, 62], // e8, f8, g8
                 };
                 for &sq in &check_squares {
-                    if self.is_square_attacked(sq, if side == Color::White { Color::Black } else { Color::White }) {
+                    if self.is_square_attacked(
+                        sq,
+                        if side == Color::White {
+                            Color::Black
+                        } else {
+                            Color::White
+                        },
+                    ) {
                         path_safe = false;
                         break;
                     }
@@ -903,12 +1208,23 @@ impl Board {
             }
 
             if path_safe {
-                out.push(new_move(king_from, king_to, PieceKind::King, None, None, FLAG_CASTLE_KING));
+                out.push(new_move(
+                    king_from,
+                    king_to,
+                    PieceKind::King,
+                    None,
+                    None,
+                    FLAG_CASTLE_KING,
+                ));
             }
         }
 
         // Queenside castling
-        let qs_mask = if side == Color::White { 0b0100u8 } else { 0b0001u8 };
+        let qs_mask = if side == Color::White {
+            0b0100u8
+        } else {
+            0b0001u8
+        };
         if (self.castling & qs_mask) != 0 {
             let (rook_start, king_to, _rook_to) = if side == Color::White {
                 (0, 2, 3) // a1->d1, e1->c1, a1->d1
@@ -919,10 +1235,12 @@ impl Board {
             // Check if squares between king and rook are empty
             let squares_clear = match side {
                 Color::White => {
-                    !self.is_occupied(1) && !self.is_occupied(2) && !self.is_occupied(3) // b1, c1, d1 empty
+                    !self.is_occupied(1) && !self.is_occupied(2) && !self.is_occupied(3)
+                    // b1, c1, d1 empty
                 }
                 Color::Black => {
-                    !self.is_occupied(57) && !self.is_occupied(58) && !self.is_occupied(59) // b8, c8, d8 empty
+                    !self.is_occupied(57) && !self.is_occupied(58) && !self.is_occupied(59)
+                    // b8, c8, d8 empty
                 }
             };
 
@@ -933,11 +1251,18 @@ impl Board {
             let mut path_safe = true;
             if squares_clear && rook_in_place {
                 let check_squares = match side {
-                    Color::White => [4, 3, 2], // e1, d1, c1
+                    Color::White => [4, 3, 2],    // e1, d1, c1
                     Color::Black => [60, 59, 58], // e8, d8, c8
                 };
                 for &sq in &check_squares {
-                    if self.is_square_attacked(sq, if side == Color::White { Color::Black } else { Color::White }) {
+                    if self.is_square_attacked(
+                        sq,
+                        if side == Color::White {
+                            Color::Black
+                        } else {
+                            Color::White
+                        },
+                    ) {
                         path_safe = false;
                         break;
                     }
@@ -947,7 +1272,14 @@ impl Board {
             }
 
             if path_safe {
-                out.push(new_move(king_from, king_to, PieceKind::King, None, None, FLAG_CASTLE_QUEEN));
+                out.push(new_move(
+                    king_from,
+                    king_to,
+                    PieceKind::King,
+                    None,
+                    None,
+                    FLAG_CASTLE_QUEEN,
+                ));
             }
         }
     }
@@ -970,7 +1302,11 @@ mod tests {
         for mv in pseudo_moves {
             let undo = board.make_move(mv);
             board.unmake_move(undo);
-            assert_eq!(board.zobrist, original_hash, "Mismatched Zobrist after make/unmake for move {:?}", mv);
+            assert_eq!(
+                board.zobrist, original_hash,
+                "Mismatched Zobrist after make/unmake for move {:?}",
+                mv
+            );
         }
     }
 }
@@ -987,8 +1323,10 @@ impl Board {
         let fullmove_part = parts.next().ok_or("missing fullmove")?;
 
         // Reset board
-        self.piece_bb = [0;12];
-        self.white_occ = 0; self.black_occ = 0; self.occ = 0;
+        self.piece_bb = [0; 12];
+        self.white_occ = 0;
+        self.black_occ = 0;
+        self.occ = 0;
 
         // Parse pieces: rank8 .. rank1
         let mut rank = 7;
@@ -1018,7 +1356,11 @@ impl Board {
                     file += 1;
                 }
             }
-            if rank == 0 { break; } else { rank -= 1; }
+            if rank == 0 {
+                break;
+            } else {
+                rank -= 1;
+            }
         }
 
         self.refresh_occupancy();
@@ -1047,7 +1389,9 @@ impl Board {
         self.ep = match ep_part {
             "-" => None,
             s => {
-                if s.len() != 2 { return Err("invalid ep string"); }
+                if s.len() != 2 {
+                    return Err("invalid ep string");
+                }
                 let file = s.chars().next().unwrap();
                 let rank = s.chars().nth(1).unwrap();
                 let f_idx = match file {
@@ -1077,9 +1421,9 @@ impl std::fmt::Display for Board {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for rank in (0..8).rev() {
             for file in 0..8 {
-                let sq = rank*8+file;
-                if let Some((p,c)) = self.piece_on(sq) {
-                    let ch = match (c,p) {
+                let sq = rank * 8 + file;
+                if let Some((p, c)) = self.piece_on(sq) {
+                    let ch = match (c, p) {
                         (Color::White, PieceKind::Pawn) => 'P',
                         (Color::White, PieceKind::Knight) => 'N',
                         (Color::White, PieceKind::Bishop) => 'B',

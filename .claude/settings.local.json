@@ -15,7 +15,11 @@
       "Bash(RUST_BACKTRACE=1 cargo test search::tt::tests::test_tt_replacement -- --nocapture)",
       "Bash(git checkout HEAD -- src/search/tt.rs)",
       "Bash(cat src/search/tt.rs)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(./target/release/perft:*)",
+      "Bash(./target/release/perft --depth 4)",
+      "Bash(./target/release/stress_search_test:*)",
+      "Bash(./target/release/simple_search_test:*)"
     ],
     "deny": [],
     "ask": []

@@ -39,8 +39,22 @@ impl TTEntry {
         self.key == 0
     }
 
-    pub fn new(key: u64, score: i16, depth: u8, node_type: NodeType, best_move: Move, age: u8) -> Self {
-        Self { key, score, depth, node_type, best_move, age }
+    pub fn new(
+        key: u64,
+        score: i16,
+        depth: u8,
+        node_type: NodeType,
+        best_move: Move,
+        age: u8,
+    ) -> Self {
+        Self {
+            key,
+            score,
+            depth,
+            node_type,
+            best_move,
+            age,
+        }
     }
 
     /// Return bounds for alpha-beta usage
@@ -65,11 +79,17 @@ impl TranspositionTable {
     pub fn new(size_mb: usize) -> Self {
         let entry_size = std::mem::size_of::<TTEntry>();
         let mut entries = (size_mb * 1024 * 1024) / entry_size;
-        if entries == 0 { entries = 1024; }
+        if entries == 0 {
+            entries = 1024;
+        }
         let actual = entries.next_power_of_two();
         let final_entries = actual.max(1024);
         let mask = (final_entries - 1) as u64;
-        Self { entries: vec![TTEntry::empty(); final_entries], mask, age: 0 }
+        Self {
+            entries: vec![TTEntry::empty(); final_entries],
+            mask,
+            age: 0,
+        }
     }
 
     /// Probe returns a reference to an entry if the stored key matches and entry is recent enough
@@ -109,11 +129,19 @@ impl TranspositionTable {
     }
 
     pub fn clear(&mut self) {
-        for e in &mut self.entries { *e = TTEntry::empty(); }
+        for e in &mut self.entries {
+            *e = TTEntry::empty();
+        }
         self.age = 0;
     }
 
-    pub fn size(&self) -> usize { self.entries.len() }
+    pub fn size(&self) -> usize {
+        self.entries.len()
+    }
 }
 
-impl Default for TranspositionTable { fn default() -> Self { Self::new(16) } }
+impl Default for TranspositionTable {
+    fn default() -> Self {
+        Self::new(16)
+    }
+}

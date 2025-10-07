@@ -9,13 +9,13 @@
 //! - `stats`: Search statistics
 //! - `search`: Main search struct and algorithms
 
-pub mod tt;
 pub mod params;
-pub mod stats;
 pub mod search;
+pub mod stats;
+pub mod tt;
 
-pub use crate::board::Move;
-pub use self::tt::TranspositionTable;
 pub use self::params::SearchParams;
-pub use self::stats::SearchStats;
 pub use self::search::Search;
+pub use self::stats::SearchStats;
+pub use self::tt::TranspositionTable;
+pub use crate::board::Move;
