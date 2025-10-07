@@ -1,4 +1,11 @@
+//! Scacchista UCI chess engine main entry point.
+
+use scacchista;
+
 fn main() {
-    // Init tables with lazy global static or call from library root main
-    println!("Scacchista UCI engine (stub)");
+    scacchista::init();
+
+    // Run UCI main loop
+    if let Err(e) = uci::run_uci_loop() {
+    }
 }
