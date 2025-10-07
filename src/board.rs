@@ -1414,6 +1414,60 @@ impl Board {
 
         Ok(())
     }
+
+    /// Make a null move (skip turn) - only toggles side and updates Zobrist
+    /// Used for null-move pruning in search
+    pub fn make_null_move(&mut self) -> Undo {
+        let undo = Undo {
+            from: 0, // No squares involved in null move
+            to: 0,
+            moved_piece: PieceKind::Pawn, // Placeholder
+            flags: 0,
+            captured_piece: None,
+            captured_sq: None,
+            prev_ep: self.ep,
+            prev_castling: self.castling,
+            prev_halfmove: self.halfmove,
+            prev_fullmove: self.fullmove,
+            prev_side: self.side,
+            prev_zobrist: self.zobrist,
+        };
+
+        // Update Zobrist - only side toggle needed
+        crate::zobrist::init_zobrist();
+        unsafe {
+            self.zobrist ^= crate::zobrist::ZOB_SIDE;
+        }
+
+        // Clear en-passant square after null move
+        if let Some(ep_sq) = self.ep {
+            let file = (ep_sq % 8) as usize;
+            crate::zobrist::init_zobrist();
+            unsafe {
+                self.zobrist ^= crate::zobrist::ZOB_EP_FILE[file];
+            }
+        }
+        self.ep = None;
+
+        // Toggle side to move
+        self.side = match self.side {
+            Color::White => Color::Black,
+            Color::Black => Color::White,
+        };
+
+        undo
+    }
+
+    /// Unmake a null move - restore previous state
+    pub fn unmake_null_move(&mut self, undo: Undo) {
+        // Restore all state from undo
+        self.side = undo.prev_side;
+        self.ep = undo.prev_ep;
+        self.castling = undo.prev_castling;
+        self.halfmove = undo.prev_halfmove;
+        self.fullmove = undo.prev_fullmove;
+        self.zobrist = undo.prev_zobrist;
+    }
 }
 
 // Simple display (fen)

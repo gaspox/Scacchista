@@ -28,6 +28,10 @@ path = "debug_perft.rs"
 name = "test_board"
 path = "test_board.rs"
 
+[[bin]]
+name = "test_qsearch_simple"
+path = "test_qsearch_simple.rs"
+
 [profile.release]
 lto = true
 codegen-units = 1

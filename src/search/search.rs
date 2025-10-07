@@ -1084,7 +1084,7 @@ impl Search {
 
             // Next gain/lux
             if idx < gain_list.len() {
-                gain_list[idx] = capture_value - gain_list[idx - 1];
+                gain_list[idx] = capture_value.saturating_sub(gain_list[idx - 1]);
                 idx += 1;
             }
 
@@ -1093,18 +1093,27 @@ impl Search {
         }
 
         // Compute net gain using swap-off logic: sum of even-index gains - sum of odd-index gains
-        let mut see_score = 0i16;
+        let mut see_acc = 0i32;
         for i in 0..idx {
             if i % 2 == 0 {
-                see_score += gain_list[i];
+                see_acc = see_acc.saturating_add(gain_list[i] as i32);
             } else {
-                see_score -= gain_list[i];
+                see_acc = see_acc.saturating_sub(gain_list[i] as i32);
             }
         }
 
-        // Cache the result
+        // Clamp to i16 range and cache result
+        let see_score = if see_acc > i16::MAX as i32 {
+            i16::MAX
+        } else if see_acc < i16::MIN as i32 {
+            i16::MIN
+        } else {
+            see_acc as i16
+        };
+
         self.see_cache.insert(target_sq, see_score);
         see_score
+
     }
 
     /// Get all pieces that attack the target square from the given color

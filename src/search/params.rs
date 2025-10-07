@@ -37,8 +37,14 @@ pub struct SearchParams {
     /// Futility margin for pruning
     pub futility_margin: i16,
 
+    /// Minimum depth for futility pruning
+    pub futility_min_depth: u8,
+
     /// Number of killer move slots
     pub killer_moves_count: usize,
+
+    /// Maximum depth for quiescence search
+    pub qsearch_depth: u8,
 }
 
 impl Default for SearchParams {
@@ -55,7 +61,9 @@ impl Default for SearchParams {
             lmr_base_reduction: 2,
             enable_futility_pruning: true,
             futility_margin: 100, // 1.0 pawn
+            futility_min_depth: 3,
             killer_moves_count: 2,
+            qsearch_depth: 6,
         }
     }
 }
@@ -87,6 +95,66 @@ impl SearchParams {
     /// Set node limit
     pub fn node_limit(mut self, limit: u64) -> Self {
         self.node_limit = limit;
+        self
+    }
+
+    /// Enable or disable null-move pruning
+    pub fn enable_null_move_pruning(mut self, enable: bool) -> Self {
+        self.enable_null_move_pruning = enable;
+        self
+    }
+
+    /// Set minimum depth for null-move pruning
+    pub fn null_move_min_depth(mut self, depth: u8) -> Self {
+        self.null_move_min_depth = depth;
+        self
+    }
+
+    /// Enable or disable LMR
+    pub fn enable_lmr(mut self, enable: bool) -> Self {
+        self.enable_lmr = enable;
+        self
+    }
+
+    /// Set minimum depth for LMR
+    pub fn lmr_min_depth(mut self, depth: u8) -> Self {
+        self.lmr_min_depth = depth;
+        self
+    }
+
+    /// Set base LMR reduction
+    pub fn lmr_base_reduction(mut self, reduction: u8) -> Self {
+        self.lmr_base_reduction = reduction;
+        self
+    }
+
+    /// Enable or disable futility pruning
+    pub fn enable_futility_pruning(mut self, enable: bool) -> Self {
+        self.enable_futility_pruning = enable;
+        self
+    }
+
+    /// Set futility margin
+    pub fn futility_margin(mut self, margin: i16) -> Self {
+        self.futility_margin = margin;
+        self
+    }
+
+    /// Set minimum depth for futility pruning
+    pub fn futility_min_depth(mut self, depth: u8) -> Self {
+        self.futility_min_depth = depth;
+        self
+    }
+
+    /// Set killer moves count
+    pub fn killer_moves_count(mut self, count: usize) -> Self {
+        self.killer_moves_count = count;
+        self
+    }
+
+    /// Set quiescence search depth
+    pub fn qsearch_depth(mut self, depth: u8) -> Self {
+        self.qsearch_depth = depth;
         self
     }
 }
