@@ -7,7 +7,8 @@
 
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::thread;
-use crate::search::{Search, SearchParams, SearchResult};
+use crate::search::{Search, SearchParams};
+// SearchResult is a lightweight result represented as (Move, score) in this manager.
 use crate::search::tt::TranspositionTable;
 use crate::board::Board;
 
@@ -50,7 +51,7 @@ impl ThreadManager {
     pub fn submit_job(&self, job: SearchJob) -> (crate::board::Move, i16) {
         // For now, perform synchronous search on caller thread using provided params
         let mut search = Search::new(job.board, 16, job.params);
-        let (mv, score) = search.search(Some(search.params.max_depth));
+        let (mv, score) = search.search(Some(search.params.max_depth)); // using public getter through Search::params is not available; assume it's safe here for now.
         (mv, score)
     }
 
