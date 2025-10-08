@@ -1,5 +1,6 @@
 pub mod board;
 pub mod search;
+pub mod uci;
 pub mod utils;
 pub mod zobrist; // Scacchista search module (was MyRustChessEngine search)
 
