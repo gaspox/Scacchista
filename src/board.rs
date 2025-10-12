@@ -1151,7 +1151,7 @@ impl Board {
             return;
         }
 
-        let enemy_occ = if side == Color::White {
+        let _enemy_occ = if side == Color::White {
             self.black_occ
         } else {
             self.white_occ

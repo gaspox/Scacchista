@@ -6,7 +6,9 @@
 use super::params::{SearchParams, TimeManagement};
 use super::stats::SearchStats;
 use super::tt::{NodeType, TranspositionTable};
-use crate::board::{Board, Color, Move, PieceKind, FLAG_PROMOTION, FLAG_CASTLE_KING, FLAG_CASTLE_QUEEN};
+use crate::board::{
+    Board, Color, Move, PieceKind, FLAG_CASTLE_KING, FLAG_CASTLE_QUEEN, FLAG_PROMOTION,
+};
 use crate::{move_captured, move_flag, move_piece, move_to_sq};
 use std::collections::HashMap;
 
@@ -245,7 +247,10 @@ impl Search {
             let undo = self.board.make_move(mv);
             let (score, _node_type) = if depth <= self.params.qsearch_depth {
                 // When close to leaf, use quiescence search
-                (self.qsearch(alpha, beta, self.params.qsearch_depth), NodeType::Exact)
+                (
+                    self.qsearch(alpha, beta, self.params.qsearch_depth),
+                    NodeType::Exact,
+                )
             } else {
                 // Recursive search
                 let score = -self.negamax_pv(depth - 1, -beta, -alpha, 0);
@@ -316,7 +321,8 @@ impl Search {
             && depth >= self.params.futility_min_depth
             && !self.is_in_check()
             && !self.is_endgame()
-            && alpha < beta - 1  // Not in PV node
+            && alpha < beta - 1
+        // Not in PV node
         {
             let static_eval = self.static_eval();
             if static_eval + self.params.futility_margin < beta {
@@ -329,24 +335,38 @@ impl Search {
         if self.params.enable_null_move_pruning
             && depth >= self.params.null_move_min_depth
             && ply > 0  // Not at root
-            && !self.is_in_check() {  // Not in check
+            && !self.is_in_check()
+        {
+            // Not in check
 
             // Null-move reduction: typically R = 2 or 3, we'll use R = 2
             let reduction = 2;
             // Ensure we don't go below depth 0
-            let null_depth = if depth > reduction { depth - 1 - reduction } else { 0 };
+            let null_depth = if depth > reduction {
+                depth - 1 - reduction
+            } else {
+                0
+            };
 
             // Make null move (skip turn)
             let undo = self.board.make_null_move();
 
             // Perform reduced-depth search with a null window
             // After null move, the side to move has changed, so we search from opponent's perspective
-            let null_alpha = if beta > i16::MIN + 1 { -beta + 1 } else { i16::MAX };
+            let null_alpha = if beta > i16::MIN + 1 {
+                -beta + 1
+            } else {
+                i16::MAX
+            };
             let null_beta = if beta > i16::MIN { -beta } else { i16::MAX };
             let null_search_score = self.negamax_pv(null_depth, null_alpha, null_beta, ply + 1);
 
             // Handle overflow when negating
-            let null_score = if null_search_score == i16::MIN { i16::MAX } else { -null_search_score };
+            let null_score = if null_search_score == i16::MIN {
+                i16::MAX
+            } else {
+                -null_search_score
+            };
 
             // Unmake null move
             self.board.unmake_null_move(undo);
@@ -355,19 +375,50 @@ impl Search {
             if null_score >= beta {
                 // Only count as null-move cutoff if it's not a zugzwang position
                 // Avoid null-move cutoffs in endgame where Zugzwang is likely
-                let total_pieces = self.board.piece_bb(crate::board::PieceKind::Pawn, crate::board::Color::White).count_ones()
-                    + self.board.piece_bb(crate::board::PieceKind::Knight, crate::board::Color::White).count_ones()
-                    + self.board.piece_bb(crate::board::PieceKind::Bishop, crate::board::Color::White).count_ones()
-                    + self.board.piece_bb(crate::board::PieceKind::Rook, crate::board::Color::White).count_ones()
-                    + self.board.piece_bb(crate::board::PieceKind::Queen, crate::board::Color::White).count_ones()
-                    + self.board.piece_bb(crate::board::PieceKind::Pawn, crate::board::Color::Black).count_ones()
-                    + self.board.piece_bb(crate::board::PieceKind::Knight, crate::board::Color::Black).count_ones()
-                    + self.board.piece_bb(crate::board::PieceKind::Bishop, crate::board::Color::Black).count_ones()
-                    + self.board.piece_bb(crate::board::PieceKind::Rook, crate::board::Color::Black).count_ones()
-                    + self.board.piece_bb(crate::board::PieceKind::Queen, crate::board::Color::Black).count_ones();
+                let total_pieces = self
+                    .board
+                    .piece_bb(crate::board::PieceKind::Pawn, crate::board::Color::White)
+                    .count_ones()
+                    + self
+                        .board
+                        .piece_bb(crate::board::PieceKind::Knight, crate::board::Color::White)
+                        .count_ones()
+                    + self
+                        .board
+                        .piece_bb(crate::board::PieceKind::Bishop, crate::board::Color::White)
+                        .count_ones()
+                    + self
+                        .board
+                        .piece_bb(crate::board::PieceKind::Rook, crate::board::Color::White)
+                        .count_ones()
+                    + self
+                        .board
+                        .piece_bb(crate::board::PieceKind::Queen, crate::board::Color::White)
+                        .count_ones()
+                    + self
+                        .board
+                        .piece_bb(crate::board::PieceKind::Pawn, crate::board::Color::Black)
+                        .count_ones()
+                    + self
+                        .board
+                        .piece_bb(crate::board::PieceKind::Knight, crate::board::Color::Black)
+                        .count_ones()
+                    + self
+                        .board
+                        .piece_bb(crate::board::PieceKind::Bishop, crate::board::Color::Black)
+                        .count_ones()
+                    + self
+                        .board
+                        .piece_bb(crate::board::PieceKind::Rook, crate::board::Color::Black)
+                        .count_ones()
+                    + self
+                        .board
+                        .piece_bb(crate::board::PieceKind::Queen, crate::board::Color::Black)
+                        .count_ones();
 
                 // Don't use null-move pruning in very sparse positions to avoid Zugzwang
-                if total_pieces > 6 {  // Only with enough pieces on board
+                if total_pieces > 6 {
+                    // Only with enough pieces on board
                     self.stats.inc_null_move_cutoff();
                     return beta;
                 }
@@ -467,7 +518,11 @@ impl Search {
             let move_count = (move_idx + 1) as u32;
 
             // Check if move gives check (only for quiet moves that might be reduced)
-            let gives_check = if is_quiet && self.params.enable_lmr && depth >= self.params.lmr_min_depth && move_count > 3 {
+            let gives_check = if is_quiet
+                && self.params.enable_lmr
+                && depth >= self.params.lmr_min_depth
+                && move_count > 3
+            {
                 self.move_gives_check(mv)
             } else {
                 false
@@ -632,7 +687,7 @@ impl Search {
                 || move_flag(mv, FLAG_PROMOTION)                // promotions
                 || move_flag(mv, FLAG_CASTLE_KING)               // castling
                 || move_flag(mv, FLAG_CASTLE_QUEEN)              // castling
-                || self.move_gives_check(mv);                   // gives check
+                || self.move_gives_check(mv); // gives check
 
             if is_noisy {
                 noisy_moves.push(mv);
@@ -805,14 +860,38 @@ impl Search {
     /// Check if position is in endgame (few pieces remaining)
     fn is_endgame(&self) -> bool {
         // Count total pieces (excluding pawns for endgame detection)
-        let total_pieces = self.board.piece_bb(PieceKind::Knight, Color::White).count_ones()
-            + self.board.piece_bb(PieceKind::Bishop, Color::White).count_ones()
-            + self.board.piece_bb(PieceKind::Rook, Color::White).count_ones()
-            + self.board.piece_bb(PieceKind::Queen, Color::White).count_ones()
-            + self.board.piece_bb(PieceKind::Knight, Color::Black).count_ones()
-            + self.board.piece_bb(PieceKind::Bishop, Color::Black).count_ones()
-            + self.board.piece_bb(PieceKind::Rook, Color::Black).count_ones()
-            + self.board.piece_bb(PieceKind::Queen, Color::Black).count_ones();
+        let total_pieces = self
+            .board
+            .piece_bb(PieceKind::Knight, Color::White)
+            .count_ones()
+            + self
+                .board
+                .piece_bb(PieceKind::Bishop, Color::White)
+                .count_ones()
+            + self
+                .board
+                .piece_bb(PieceKind::Rook, Color::White)
+                .count_ones()
+            + self
+                .board
+                .piece_bb(PieceKind::Queen, Color::White)
+                .count_ones()
+            + self
+                .board
+                .piece_bb(PieceKind::Knight, Color::Black)
+                .count_ones()
+            + self
+                .board
+                .piece_bb(PieceKind::Bishop, Color::Black)
+                .count_ones()
+            + self
+                .board
+                .piece_bb(PieceKind::Rook, Color::Black)
+                .count_ones()
+            + self
+                .board
+                .piece_bb(PieceKind::Queen, Color::Black)
+                .count_ones();
 
         // Consider endgame if we have 7 or fewer pieces (excluding pawns)
         total_pieces <= 7
@@ -971,7 +1050,13 @@ impl Search {
 
     /// Get LMR reduction for specific depth and move count
     /// Only applies to quiet moves, returns 0 for captures/promotions
-    fn get_lmr_reduction(&mut self, depth: u8, move_count: u32, is_quiet: bool, gives_check: bool) -> u8 {
+    fn get_lmr_reduction(
+        &mut self,
+        depth: u8,
+        move_count: u32,
+        is_quiet: bool,
+        gives_check: bool,
+    ) -> u8 {
         // Don't reduce if LMR is disabled or move is not quiet
         if !self.params.enable_lmr || !is_quiet || depth < self.params.lmr_min_depth {
             return 0;
@@ -1024,13 +1109,14 @@ impl Search {
         self.stats.inc_see_eval();
 
         // Get piece on target square (victim)
-        let victim_value = if let Some((victim_kind, _victim_color)) = self.board.piece_on(target_sq) {
-            self.piece_value(&victim_kind)
-        } else {
-            // Empty square - no capture
-            self.see_cache.insert(target_sq, 0);
-            return 0;
-        };
+        let victim_value =
+            if let Some((victim_kind, _victim_color)) = self.board.piece_on(target_sq) {
+                self.piece_value(&victim_kind)
+            } else {
+                // Empty square - no capture
+                self.see_cache.insert(target_sq, 0);
+                return 0;
+            };
 
         // Get all attackers for both sides (including current attacker)
         let mut white_attackers = self.get_attackers_to_square(target_sq, Color::White);
@@ -1050,9 +1136,15 @@ impl Search {
         loop {
             // Choose least valuable attacker of current side
             let (attackers, lva_square) = if side == Color::White {
-                (white_attackers, self.find_least_valuable_attacker(white_attackers, Color::White))
+                (
+                    white_attackers,
+                    self.find_least_valuable_attacker(white_attackers, Color::White),
+                )
             } else {
-                (black_attackers, self.find_least_valuable_attacker(black_attackers, Color::Black))
+                (
+                    black_attackers,
+                    self.find_least_valuable_attacker(black_attackers, Color::Black),
+                )
             };
 
             // No more attackers for this side -> sequence ends
@@ -1068,8 +1160,10 @@ impl Search {
             from_set &= !(1u64 << lva_sq);
 
             // Add X-ray attackers revealed by removing this piece
-            let revealed_white = self.add_xray_attackers(target_sq, lva_sq, Color::White) & from_set;
-            let revealed_black = self.add_xray_attackers(target_sq, lva_sq, Color::Black) & from_set;
+            let revealed_white =
+                self.add_xray_attackers(target_sq, lva_sq, Color::White) & from_set;
+            let revealed_black =
+                self.add_xray_attackers(target_sq, lva_sq, Color::Black) & from_set;
 
             white_attackers |= revealed_white;
             black_attackers |= revealed_black;
@@ -1089,7 +1183,11 @@ impl Search {
             }
 
             // Switch sides
-            side = if side == Color::White { Color::Black } else { Color::White };
+            side = if side == Color::White {
+                Color::Black
+            } else {
+                Color::White
+            };
         }
 
         // Compute net gain using swap-off logic: sum of even-index gains - sum of odd-index gains
@@ -1113,7 +1211,6 @@ impl Search {
 
         self.see_cache.insert(target_sq, see_score);
         see_score
-
     }
 
     /// Get all pieces that attack the target square from the given color
@@ -1127,28 +1224,32 @@ impl Search {
         // Pawn attacks (special case: pawns attack differently from where they move)
         attackers |= if color == Color::White {
             let white_pawns = self.board.piece_bb(PieceKind::Pawn, Color::White);
-            ((white_pawns & crate::utils::NOT_FILE_A) << 7) & (1u64 << target_sq) |
-            ((white_pawns & crate::utils::NOT_FILE_H) << 9) & (1u64 << target_sq)
+            ((white_pawns & crate::utils::NOT_FILE_A) << 7) & (1u64 << target_sq)
+                | ((white_pawns & crate::utils::NOT_FILE_H) << 9) & (1u64 << target_sq)
         } else {
             let black_pawns = self.board.piece_bb(PieceKind::Pawn, Color::Black);
-            ((black_pawns & crate::utils::NOT_FILE_A) >> 9) & (1u64 << target_sq) |
-            ((black_pawns & crate::utils::NOT_FILE_H) >> 7) & (1u64 << target_sq)
+            ((black_pawns & crate::utils::NOT_FILE_A) >> 9) & (1u64 << target_sq)
+                | ((black_pawns & crate::utils::NOT_FILE_H) >> 7) & (1u64 << target_sq)
         };
 
         // Knight attacks
-        attackers |= crate::utils::knight_attacks(target_sq) & self.board.piece_bb(PieceKind::Knight, color);
+        attackers |=
+            crate::utils::knight_attacks(target_sq) & self.board.piece_bb(PieceKind::Knight, color);
 
         // King attacks (adjacent squares)
-        attackers |= crate::utils::king_attacks(target_sq) & self.board.piece_bb(PieceKind::King, color);
+        attackers |=
+            crate::utils::king_attacks(target_sq) & self.board.piece_bb(PieceKind::King, color);
 
         // Diagonal sliding attacks (bishops, queens)
-        let diagonal_sliders = self.board.piece_bb(PieceKind::Bishop, color) | self.board.piece_bb(PieceKind::Queen, color);
+        let diagonal_sliders = self.board.piece_bb(PieceKind::Bishop, color)
+            | self.board.piece_bb(PieceKind::Queen, color);
         if diagonal_sliders != 0 {
             attackers |= self.get_sliding_attackers(target_sq, diagonal_sliders, true);
         }
 
         // Orthogonal sliding attacks (rooks, queens)
-        let orthogonal_sliders = self.board.piece_bb(PieceKind::Rook, color) | self.board.piece_bb(PieceKind::Queen, color);
+        let orthogonal_sliders = self.board.piece_bb(PieceKind::Rook, color)
+            | self.board.piece_bb(PieceKind::Queen, color);
         if orthogonal_sliders != 0 {
             attackers |= self.get_sliding_attackers(target_sq, orthogonal_sliders, false);
         }
@@ -1178,10 +1279,12 @@ impl Search {
                     break;
                 }
                 // Check board boundaries for diagonal directions
-                if diagonal && ((dir == -9 && (sq + 1) % 8 == 0) ||
-                               (dir == -7 && sq % 8 == 0) ||
-                               (dir == 7 && (sq + 1) % 8 == 0) ||
-                               (dir == 9 && sq % 8 == 0)) {
+                if diagonal
+                    && ((dir == -9 && (sq + 1) % 8 == 0)
+                        || (dir == -7 && sq % 8 == 0)
+                        || (dir == 7 && (sq + 1) % 8 == 0)
+                        || (dir == 9 && sq % 8 == 0))
+                {
                     break;
                 }
 
@@ -1212,10 +1315,19 @@ impl Search {
         // Check pieces in value order: Pawn, Knight, Bishop, Rook, Queen, King
         let pieces = [
             (PieceKind::Pawn, self.board.piece_bb(PieceKind::Pawn, color)),
-            (PieceKind::Knight, self.board.piece_bb(PieceKind::Knight, color)),
-            (PieceKind::Bishop, self.board.piece_bb(PieceKind::Bishop, color)),
+            (
+                PieceKind::Knight,
+                self.board.piece_bb(PieceKind::Knight, color),
+            ),
+            (
+                PieceKind::Bishop,
+                self.board.piece_bb(PieceKind::Bishop, color),
+            ),
             (PieceKind::Rook, self.board.piece_bb(PieceKind::Rook, color)),
-            (PieceKind::Queen, self.board.piece_bb(PieceKind::Queen, color)),
+            (
+                PieceKind::Queen,
+                self.board.piece_bb(PieceKind::Queen, color),
+            ),
             (PieceKind::King, self.board.piece_bb(PieceKind::King, color)),
         ];
 
@@ -1236,15 +1348,19 @@ impl Search {
         let mut xray_attackers = 0u64;
 
         // Diagonal X-rays (bishops, queens)
-        let diagonal_sliders = self.board.piece_bb(PieceKind::Bishop, color) | self.board.piece_bb(PieceKind::Queen, color);
+        let diagonal_sliders = self.board.piece_bb(PieceKind::Bishop, color)
+            | self.board.piece_bb(PieceKind::Queen, color);
         if diagonal_sliders != 0 && self.is_on_same_diagonal(target_sq, removed_sq) {
-            xray_attackers |= self.get_sliding_attackers_target_squares(target_sq, diagonal_sliders, true);
+            xray_attackers |=
+                self.get_sliding_attackers_target_squares(target_sq, diagonal_sliders, true);
         }
 
         // Orthogonal X-rays (rooks, queens)
-        let orthogonal_sliders = self.board.piece_bb(PieceKind::Rook, color) | self.board.piece_bb(PieceKind::Queen, color);
+        let orthogonal_sliders = self.board.piece_bb(PieceKind::Rook, color)
+            | self.board.piece_bb(PieceKind::Queen, color);
         if orthogonal_sliders != 0 && self.is_on_same_rank_file(target_sq, removed_sq) {
-            xray_attackers |= self.get_sliding_attackers_target_squares(target_sq, orthogonal_sliders, false);
+            xray_attackers |=
+                self.get_sliding_attackers_target_squares(target_sq, orthogonal_sliders, false);
         }
 
         xray_attackers
@@ -1272,7 +1388,12 @@ impl Search {
     }
 
     /// Get sliding attackers that can reach target through specific squares
-    fn get_sliding_attackers_target_squares(&self, target_sq: usize, sliders: u64, diagonal: bool) -> u64 {
+    fn get_sliding_attackers_target_squares(
+        &self,
+        target_sq: usize,
+        sliders: u64,
+        diagonal: bool,
+    ) -> u64 {
         let mut attackers = 0u64;
         let occ = self.board.occ;
 
@@ -1291,10 +1412,12 @@ impl Search {
                 if !diagonal && (dir == -1 && (sq + 1) % 8 == 0 || dir == 1 && sq % 8 == 0) {
                     break;
                 }
-                if diagonal && ((dir == -9 && (sq + 1) % 8 == 0) ||
-                               (dir == -7 && sq % 8 == 0) ||
-                               (dir == 7 && (sq + 1) % 8 == 0) ||
-                               (dir == 9 && sq % 8 == 0)) {
+                if diagonal
+                    && ((dir == -9 && (sq + 1) % 8 == 0)
+                        || (dir == -7 && sq % 8 == 0)
+                        || (dir == 7 && (sq + 1) % 8 == 0)
+                        || (dir == 9 && sq % 8 == 0))
+                {
                     break;
                 }
 
@@ -1320,7 +1443,6 @@ impl Search {
     }
 
     /// Clear SEE cache (call at each node position) - already defined above
-
     /// Check if a move gives check (simplified check)
     fn move_gives_check(&mut self, mv: Move) -> bool {
         // Make the move and check if opponent is in check
@@ -1733,7 +1855,8 @@ mod tests {
 
         println!(
             "Complex position - Nodes: {}, Null-move cutoffs: {}, Ratio: {:.2}%",
-            total_nodes, null_cutoffs,
+            total_nodes,
+            null_cutoffs,
             (null_cutoffs as f64 / total_nodes as f64) * 100.0
         );
 
@@ -1767,16 +1890,16 @@ mod tests {
         let mut search_no_lmr = Search::new(
             board.clone(),
             1,
-            SearchParams::new()
-                .max_depth(5)
-                .enable_lmr(false),
+            SearchParams::new().max_depth(5).enable_lmr(false),
         );
 
         let (_best_move2, _score2) = search_no_lmr.search(Some(5));
         let lmr_count_disabled = search_no_lmr.stats().lmr_reductions;
 
-        println!("LMR test - Enabled: {} reductions, Disabled: {} reductions",
-                 lmr_count_enabled, lmr_count_disabled);
+        println!(
+            "LMR test - Enabled: {} reductions, Disabled: {} reductions",
+            lmr_count_enabled, lmr_count_disabled
+        );
 
         // LMR enabled should have more reductions than disabled
         assert!(lmr_count_enabled >= lmr_count_disabled);
@@ -1805,7 +1928,10 @@ mod tests {
         // Should have zero LMR reductions when disabled
         assert_eq!(search.stats().lmr_reductions, 0);
 
-        println!("LMR disabled test: {} LMR reductions (should be 0)", search.stats().lmr_reductions);
+        println!(
+            "LMR disabled test: {} LMR reductions (should be 0)",
+            search.stats().lmr_reductions
+        );
     }
 
     #[test]
@@ -1842,7 +1968,10 @@ mod tests {
         search2.search(Some(5));
         let lmr_depth_5 = search2.stats().lmr_reductions;
 
-        println!("LMR depth sensitivity - Depth 2: {}, Depth 5: {}", lmr_depth_2, lmr_depth_5);
+        println!(
+            "LMR depth sensitivity - Depth 2: {}, Depth 5: {}",
+            lmr_depth_2, lmr_depth_5
+        );
 
         // Deeper search should have more opportunities for LMR
         assert!(lmr_depth_5 >= lmr_depth_2);
@@ -1891,8 +2020,10 @@ mod tests {
         let _ = search2.search(Some(4));
         let lmr_second_search = search2.stats().lmr_reductions;
 
-        println!("LMR history-based test - First: {}, Second: {} reductions",
-                 lmr_first_search, lmr_second_search);
+        println!(
+            "LMR history-based test - First: {}, Second: {} reductions",
+            lmr_first_search, lmr_second_search
+        );
 
         // Both searches should have LMR activity in this position
         assert!(lmr_first_search >= 0);
@@ -1922,7 +2053,10 @@ mod tests {
         let (best_move, _score) = search.search(Some(4));
         let lmr_reductions = search.stats().lmr_reductions;
 
-        println!("LMR captures test - Best move: {}, Reductions: {}", best_move, lmr_reductions);
+        println!(
+            "LMR captures test - Best move: {}, Reductions: {}",
+            best_move, lmr_reductions
+        );
 
         // Should have some LMR activity for quiet moves
         // But captures should not be reduced (this is enforced by is_quiet check)
@@ -1957,7 +2091,10 @@ mod tests {
         let lmr_count = search_both.stats().lmr_reductions;
         let null_move_count = search_both.stats().null_move_cutoffs;
 
-        println!("Integration test - LMR reductions: {}, Null-move cutoffs: {}", lmr_count, null_move_count);
+        println!(
+            "Integration test - LMR reductions: {}, Null-move cutoffs: {}",
+            lmr_count, null_move_count
+        );
 
         // Both optimizations should work together
         assert!(lmr_count >= 0);
@@ -1983,7 +2120,10 @@ mod tests {
         assert!(moves_8_depth_4 > 0);
         assert!(moves_8_depth_4 <= 6);
 
-        println!("LMR formula test passed - d3m4={}, d4m8={}", moves_4_depth_3, moves_8_depth_4);
+        println!(
+            "LMR formula test passed - d3m4={}, d4m8={}",
+            moves_4_depth_3, moves_8_depth_4
+        );
     }
 
     #[test]
@@ -2012,8 +2152,10 @@ mod tests {
         assert!(search.params.lmr_base_reduction == 2);
         assert!(search.params.enable_lmr == true);
 
-        println!("LMR parameters test: {} reductions with custom params",
-                 search.stats().lmr_reductions);
+        println!(
+            "LMR parameters test: {} reductions with custom params",
+            search.stats().lmr_reductions
+        );
     }
 
     #[test]
@@ -2037,7 +2179,10 @@ mod tests {
         let (_best_move, _score) = search.search(Some(5));
         let futility_pruned = search.stats().futility_pruned;
 
-        println!("Futility pruning basic test: {} nodes pruned", futility_pruned);
+        println!(
+            "Futility pruning basic test: {} nodes pruned",
+            futility_pruned
+        );
 
         // Should have some futility pruning activity in a complex position
         assert!(futility_pruned >= 0);
@@ -2080,8 +2225,10 @@ mod tests {
         let futility_disabled = search_disabled.stats().futility_pruned;
         let futility_enabled = search_enabled.stats().futility_pruned;
 
-        println!("Futility pruning comparison - Disabled: {}, Enabled: {}",
-                 futility_disabled, futility_enabled);
+        println!(
+            "Futility pruning comparison - Disabled: {}, Enabled: {}",
+            futility_disabled, futility_enabled
+        );
 
         // Disabled version should have zero futility pruning
         assert_eq!(futility_disabled, 0);
@@ -2125,8 +2272,10 @@ mod tests {
         let (_best_move2, _score2) = search_small_margin.search(Some(4));
         let pruned_small = search_small_margin.stats().futility_pruned;
 
-        println!("Futility margin test - Large margin: {}, Small margin: {}",
-                 pruned_large, pruned_small);
+        println!(
+            "Futility margin test - Large margin: {}, Small margin: {}",
+            pruned_large, pruned_small
+        );
 
         // Both should complete without crashing
         assert!(pruned_large >= 0);
@@ -2158,7 +2307,10 @@ mod tests {
         let (_best_move, _score) = search.search(Some(4));
         let futility_pruned = search.stats().futility_pruned;
 
-        println!("Futility pruning endgame safety: {} pruned in king-only position", futility_pruned);
+        println!(
+            "Futility pruning endgame safety: {} pruned in king-only position",
+            futility_pruned
+        );
 
         // Search should complete without crashing
         assert!(futility_pruned >= 0);
@@ -2212,10 +2364,14 @@ mod tests {
         let futility_lmr_only = search_lmr_only.stats().futility_pruned;
         let lmr_lmr_only = search_lmr_only.stats().lmr_reductions;
 
-        println!("Integration test - Both enabled: {} futility, {} LMR",
-                 futility_count, lmr_count);
-        println!("LMR only: {} futility, {} LMR",
-                 futility_lmr_only, lmr_lmr_only);
+        println!(
+            "Integration test - Both enabled: {} futility, {} LMR",
+            futility_count, lmr_count
+        );
+        println!(
+            "LMR only: {} futility, {} LMR",
+            futility_lmr_only, lmr_lmr_only
+        );
 
         // Both optimizations should work together
         assert!(futility_count >= 0);
@@ -2260,8 +2416,10 @@ mod tests {
         let (_best_move2, _score2) = search_low_depth.search(Some(3));
         let pruned_low = search_low_depth.stats().futility_pruned;
 
-        println!("Futility depth threshold test - High depth: {}, Low depth: {}",
-                 pruned_high, pruned_low);
+        println!(
+            "Futility depth threshold test - High depth: {}, Low depth: {}",
+            pruned_high, pruned_low
+        );
 
         // Both should complete without crashing
         assert!(pruned_high >= 0);
@@ -2283,9 +2441,7 @@ mod tests {
         let mut search = Search::new(
             board.clone(),
             1,
-            SearchParams::new()
-                .max_depth(4)
-                .qsearch_depth(4),
+            SearchParams::new().max_depth(4).qsearch_depth(4),
         );
 
         // Use direct quiescence search to test isolated functionality
@@ -2297,7 +2453,11 @@ mod tests {
         // Score should be reasonable (not extreme values)
         assert!(qscore > -INFINITE && qscore < INFINITE);
 
-        println!("Quiescence basic test - Score: {}, QNodes: {}", qscore, search.stats().qsearch_nodes);
+        println!(
+            "Quiescence basic test - Score: {}, QNodes: {}",
+            qscore,
+            search.stats().qsearch_nodes
+        );
     }
 
     #[test]
@@ -2309,21 +2469,14 @@ mod tests {
             .unwrap();
 
         // Test with depth = 1 (minimal quiescence)
-        let mut search_shallow = Search::new(
-            board.clone(),
-            1,
-            SearchParams::new().qsearch_depth(1),
-        );
+        let mut search_shallow =
+            Search::new(board.clone(), 1, SearchParams::new().qsearch_depth(1));
 
         let qscore_shallow = search_shallow.qsearch(-INFINITE, INFINITE, 1);
         let qnodes_shallow = search_shallow.stats().qsearch_nodes;
 
         // Test with depth = 6 (full quiescence)
-        let mut search_deep = Search::new(
-            board.clone(),
-            1,
-            SearchParams::new().qsearch_depth(6),
-        );
+        let mut search_deep = Search::new(board.clone(), 1, SearchParams::new().qsearch_depth(6));
 
         let qscore_deep = search_deep.qsearch(-INFINITE, INFINITE, 6);
         let qnodes_deep = search_deep.stats().qsearch_nodes;
@@ -2349,11 +2502,7 @@ mod tests {
             .set_from_fen("rnbqkbnr/ppp2ppp/4p3/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3")
             .unwrap(); // Position with tactical capture opportunities
 
-        let mut search = Search::new(
-            board.clone(),
-            1,
-            SearchParams::new().qsearch_depth(4),
-        );
+        let mut search = Search::new(board.clone(), 1, SearchParams::new().qsearch_depth(4));
 
         // Get static evaluation
         let static_score = search.static_eval();
@@ -2371,7 +2520,10 @@ mod tests {
 
         println!(
             "Quiescence vs static - Static: {}, QSearch: {}, Diff: {}, QNodes: {}",
-            static_score, qscore, qscore.abs_diff(static_score), search.stats().qsearch_nodes
+            static_score,
+            qscore,
+            qscore.abs_diff(static_score),
+            search.stats().qsearch_nodes
         );
     }
 
@@ -2384,11 +2536,7 @@ mod tests {
             .unwrap();
 
         // Test parameter = 0 (no quiescence)
-        let mut search_none = Search::new(
-            board.clone(),
-            1,
-            SearchParams::new().qsearch_depth(0),
-        );
+        let mut search_none = Search::new(board.clone(), 1, SearchParams::new().qsearch_depth(0));
 
         let qscore_none = search_none.qsearch(-INFINITE, INFINITE, 0);
         let qnodes_none = search_none.stats().qsearch_nodes;
@@ -2469,11 +2617,7 @@ mod tests {
             .set_from_fen("rnbqkbnr/pp1ppppp/2p5/3p4/3P4/2P5/PP1PPPPP/RNBQKBNR w KQkq - 0 4")
             .unwrap(); // Position with multiple captures available
 
-        let mut search = Search::new(
-            board.clone(),
-            1,
-            SearchParams::new().qsearch_depth(3),
-        );
+        let mut search = Search::new(board.clone(), 1, SearchParams::new().qsearch_depth(3));
 
         // Perform quiescence search
         let qscore = search.qsearch(-INFINITE, INFINITE, 3);
@@ -2496,7 +2640,10 @@ mod tests {
 
         println!(
             "Quiescence captures test - Complex: {} @ {} nodes, Quiet: {} @ {} nodes",
-            qscore, search.stats().qsearch_nodes, quiet_qscore, quiet_qnodes
+            qscore,
+            search.stats().qsearch_nodes,
+            quiet_qscore,
+            quiet_qnodes
         );
     }
 
@@ -2544,11 +2691,14 @@ mod tests {
 
         // Simple tactical position with clear captures
         // Starting position has clear capture opportunities
-        board.set_from_fen("rnbqkbnr/ppp1pppp/3p4/3P4/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap();
+        board
+            .set_from_fen("rnbqkbnr/ppp1pppp/3p4/3P4/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+            .unwrap();
         let mut search = Search::new(board.clone(), 1, SearchParams::new());
 
         let moves = board.generate_moves();
-        let capture_moves: Vec<Move> = moves.iter()
+        let capture_moves: Vec<Move> = moves
+            .iter()
             .filter(|&&mv| move_captured(mv).is_some())
             .copied()
             .collect();
@@ -2591,10 +2741,17 @@ mod tests {
 
         // Only require SEE evaluations if we found captures
         if !capture_moves.is_empty() {
-            assert!(search.stats().see_evals > 0, "Should have performed SEE evaluations");
+            assert!(
+                search.stats().see_evals > 0,
+                "Should have performed SEE evaluations"
+            );
         }
 
-        println!("SEE capture ordering test passed - {} total moves, {} captures", moves.len(), capture_moves.len());
+        println!(
+            "SEE capture ordering test passed - {} total moves, {} captures",
+            moves.len(),
+            capture_moves.len()
+        );
     }
 
     #[test]
@@ -2603,7 +2760,9 @@ mod tests {
         let mut board = Board::new();
 
         // Tactical position where capture ordering matters
-        board.set_from_fen("r3k2r/p1ppqpbp/3p1np1/4N3/2P4P/PPP1PPPP/RNBQKB2 b Qkq - 0 8").unwrap();
+        board
+            .set_from_fen("r3k2r/p1ppqpbp/3p1np1/4N3/2P4P/PPP1PPPP/RNBQKB2 b Qkq - 0 8")
+            .unwrap();
         let mut search = Search::new(board.clone(), 1, SearchParams::new().qsearch_depth(4));
 
         let qscore_with_see = search.qsearch(-INFINITE, INFINITE, 4);
@@ -2611,15 +2770,23 @@ mod tests {
         let see_evals_count = search.stats().see_evals;
 
         // Test that SEE evaluations were performed
-        assert!(see_evals_count > 0, "Should perform SEE evaluations in qsearch");
+        assert!(
+            see_evals_count > 0,
+            "Should perform SEE evaluations in qsearch"
+        );
         assert!(nodes_with_see > 0, "Should search qsearch nodes");
 
         // Score should be reasonable
-        assert!(qscore_with_see > -INFINITE && qscore_with_see < INFINITE,
-                "QSearch score should be reasonable: {}", qscore_with_see);
+        assert!(
+            qscore_with_see > -INFINITE && qscore_with_see < INFINITE,
+            "QSearch score should be reasonable: {}",
+            qscore_with_see
+        );
 
-        println!("SEE qsearch integration test passed - Score: {}, QNodes: {}, SEE evals: {}",
-                qscore_with_see, nodes_with_see, see_evals_count);
+        println!(
+            "SEE qsearch integration test passed - Score: {}, QNodes: {}, SEE evals: {}",
+            qscore_with_see, nodes_with_see, see_evals_count
+        );
     }
 
     #[test]
@@ -2645,7 +2812,9 @@ mod tests {
 
         // Second call should not have incremented count if cache worked
         // (though our cache implementation might be cleared between calls)
-        println!("SEE cache test passed - SEE1: {}, SEE2: {}, Eval calls: {}->{}->{}",
-                see1, see2, initial_evals, evals_after_first, evals_after_second);
+        println!(
+            "SEE cache test passed - SEE1: {}, SEE2: {}, Eval calls: {}->{}->{}",
+            see1, see2, initial_evals, evals_after_first, evals_after_second
+        );
     }
 }

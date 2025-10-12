@@ -1,4 +1,4 @@
-use scacchista::uci::parse_uci_command;
+use scacchista::uci::{parse_uci_command, UciCommand};
 
 #[test]
 fn test_parse_full_go_command() {
@@ -8,8 +8,23 @@ fn test_parse_full_go_command() {
             wtime,
             btime,
             movetime,
-        },
-        _ => panic!("Expected Go command"),
-    30→    } else {
-    31→        UciCommand::Unknown("".to_string())}
+            depth,
+            nodes,
+            mate,
+            movestogo,
+            infinite,
+            ponder,
+        } => {
+            assert_eq!(wtime, Some(300000));
+            assert_eq!(btime, Some(300000));
+            assert_eq!(movetime, Some(1000));
+            assert_eq!(depth, Some(6));
+            assert_eq!(nodes, Some(1000000));
+            assert_eq!(mate, Some(3));
+            assert_eq!(movestogo, Some(5));
+            assert!(infinite);
+            assert!(ponder);
+        }
+        other => panic!("Expected Go command, got: {:?}", other),
+    }
 }

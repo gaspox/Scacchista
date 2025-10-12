@@ -1,14 +1,7 @@
 //! UCI options configuration system for Scacchista
-//!
-//! This module provides the complete UCI options system including:
-//! - Option definitions with types, defaults, and constraints
-//! - Option value storage and type validation
-//! - Integration with search parameters and engine behavior
-
-use serde::{Deserialize, Serialize};
 
 /// UCI option types
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OptionType {
     Check { default: bool },
     Spin { default: i64, min: i64, max: i64 },
@@ -34,11 +27,11 @@ pub struct UciOptions {
     /// Syzygy tablebase path
     pub syzygy_path: Option<String>,
 
-    /// Search style (Normal, Tal, Petrosian)
-    pub style: String,
-
     /// Whether to use experience book
     pub use_experience_book: bool,
+
+    /// Experience book file path
+    pub experience_book_path: Option<String>,
 
     /// Chess style: Normal, Tal, Petrosian
     pub chess_style: String,
@@ -63,9 +56,14 @@ impl Default for UciOptions {
             threads: 1,
             syzygy_path: None,
             use_experience_book: true,
-
-    /// Experience book file path
-    pub experience_book_path: Option<String>,
+            experience_book_path: None,
+            chess_style: "Normal".to_string(),
+            analyze_mode: false,
+            debug_log: false,
+            engine_name: "Scacchista".to_string(),
+            author: "Claude Code".to_string(),
+        }
+    }
 }
 
 impl UciOptions {
@@ -74,28 +72,45 @@ impl UciOptions {
         Self::default()
     }
 
-    /// Set option value
+    /// Set option value (basic implementation)
     pub fn set_option(&mut self, name: &str, value: Option<&str>) -> Result<(), String> {
         match name {
             "Hash" => {
                 if let Some(v_str) = value {
                     if let Ok(val) = v_str.parse::<u64>() {
-            self.hash = val;
-        } else {
-            return Err(format!("Invalid value for option {}: {}", name, v_str) {
+                        self.hash = val;
+                    } else {
+                        return Err(format!("Invalid numeric value for Hash: {}", v_str));
+                    }
                 }
             }
             "Threads" => {
                 if let Some(v_str) = value {
-                    if let Ok(val) = v_str.parse::<u64>() {
-                    return Err(format!("Option {} requires a numeric value", name));
+                    if let Ok(val) = v_str.parse::<u8>() {
+                        self.threads = val;
+                    } else {
+                        return Err(format!("Invalid numeric value for Threads: {}", v_str));
+                    }
+                }
             }
-
-            // Handle other options
-            _ => return Err(format!("Unknown option: {}", name));
+            "SyzygyPath" => {
+                self.syzygy_path = value.map(|s| s.to_string());
+            }
+            "UseExperienceBook" => {
+                if let Some(v_str) = value {
+                    let v = matches!(v_str.to_lowercase().as_str(), "true" | "1" | "yes");
+                    self.use_experience_book = v;
+                }
+            }
+            "Style" => {
+                if let Some(v_str) = value {
+                    self.chess_style = v_str.to_string();
+                }
+            }
+            _ => {
+                return Err(format!("Unknown option: {}", name));
             }
         }
-
         Ok(())
     }
 }

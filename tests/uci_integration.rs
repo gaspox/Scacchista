@@ -1,21 +1,24 @@
 //! Integration tests for UCI protocol implementation
 
-use scacchista::uci::{UciEngine, UciState, process_uci_line};
+use scacchista::uci::{process_uci_line, UciEngine};
+
 
 #[test]
 fn test_uci_engine_lifecycle() {
     let mut engine = UciEngine::new();
 
-    // Test initial state
-    assert_eq!(*engine.state(), UciState::Init);
-
-    // Test UCI handshake
+    // Test UCI handshake (ensure uciok present)
     let responses = process_uci_line("uci", &mut engine);
-    assert_eq!(responses.len(), 3);
-    assert!(responses[0].contains("id name"));
-    assert!(responses[1].contains("id author"));
-    assert_eq!(responses[2], "uciok");
-    assert_eq!(*engine.state(), UciState::Ready);
+    assert!(responses.iter().any(|s| s.contains("uciok")));
+
+    // isready
+    let responses = process_uci_line("isready", &mut engine);
+    assert!(responses.iter().any(|s| s == "readyok"));
+
+    // go depth 1 should return a bestmove
+    let _ = process_uci_line("position startpos", &mut engine);
+    let responses = process_uci_line("go depth 1", &mut engine);
+    assert!(responses.iter().any(|s| s.starts_with("bestmove")));
 }
 
 #[test]

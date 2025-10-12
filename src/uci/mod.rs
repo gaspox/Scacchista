@@ -1,5 +1,7 @@
-pub mod parser;
 pub mod r#loop;
+pub mod options;
+pub mod parser;
 
-pub use parser::{UciCommand, parse_uci_command};
-pub use r#loop::{UciEngine, UciState, run_uci_loop, process_uci_line};
+pub use options::UciOptions;
+pub use parser::{parse_uci_command, UciCommand};
+pub use r#loop::{process_uci_line, run_uci_loop, UciEngine, UciState};

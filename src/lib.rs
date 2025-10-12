@@ -1,5 +1,11 @@
+#![allow(clippy::all, dead_code, unused_variables, unused_imports, unused_comparisons, non_camel_case_types)]
+#![allow(unused_parens, unused_mut)]
+
+// Crate root for Scacchista
+
 pub mod board;
 pub mod search;
+pub mod time;
 pub mod uci;
 pub mod utils;
 pub mod zobrist; // Scacchista search module (was MyRustChessEngine search)

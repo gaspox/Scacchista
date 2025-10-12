@@ -5,7 +5,7 @@ fn main() {
     scacchista::utils::init_attack_tables();
 
     let mut board = Board::new();
-    board.set_from_fen(&START_FEN).unwrap();
+    board.set_from_fen(START_FEN).unwrap();
 
     println!("Board FEN: {}", START_FEN);
     println!("Side to move: {:?}", board.side);
