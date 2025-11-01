@@ -11,6 +11,10 @@ use crate::board::{
 };
 use crate::{move_captured, move_flag, move_piece, move_to_sq};
 use std::collections::HashMap;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 /// Search engine configurations
 pub const INFINITE: i16 = 30000;
@@ -58,6 +62,9 @@ pub struct Search {
     /// SEE cache for current position [square] -> score
     /// Clear cache between nodes to avoid invalid results
     see_cache: HashMap<usize, i16>,
+
+    /// Stop flag for cooperative cancellation of search
+    stop_flag: Option<Arc<AtomicBool>>,
 }
 
 impl Search {
@@ -82,7 +89,14 @@ impl Search {
             killer_moves: vec![vec![0; killer_moves_count]; max_ply], // [ply][slot]
             history: [[[0; 64]; 6]; 2],
             see_cache: HashMap::new(),
+            stop_flag: None,
         }
+    }
+
+    /// Set stop flag for cooperative cancellation
+    pub fn with_stop_flag(mut self, flag: Arc<AtomicBool>) -> Self {
+        self.stop_flag = Some(flag);
+        self
     }
 
     /// Create search with reasonable defaults
@@ -130,6 +144,14 @@ impl Search {
 
         // Iterative deepening with aspiration windows
         for depth in 1..=max_depth {
+            // Check stop flag before starting new depth
+            if let Some(ref stop) = self.stop_flag {
+                if stop.load(Ordering::Relaxed) {
+                    // Stop requested, return best move found so far
+                    break;
+                }
+            }
+
             // Use aspiration window after depth 1 (we need a baseline score)
             if depth <= 1 {
                 // First depth: full window search
@@ -247,8 +269,9 @@ impl Search {
             let undo = self.board.make_move(mv);
             let (score, _node_type) = if depth <= self.params.qsearch_depth {
                 // When close to leaf, use quiescence search
+                // CRITICAL: Must negate score and swap alpha/beta like negamax!
                 (
-                    self.qsearch(alpha, beta, self.params.qsearch_depth),
+                    -self.qsearch(-beta, -alpha, self.params.qsearch_depth),
                     NodeType::Exact,
                 )
             } else {
@@ -530,12 +553,20 @@ impl Search {
 
             let undo = self.board.make_move(mv);
 
+            // Check extension: extend search by 1 ply if move gives check
+            let in_check = self.is_in_check();
+            let extension = if in_check && depth > 0 && ply < 10 {
+                1
+            } else {
+                0
+            };
+
             // Futility pruning for individual nodes (only for quiet moves)
             let is_quiet_move = move_captured(mv).is_none() && !move_flag(mv, FLAG_PROMOTION);
             let should_futility_prune = is_quiet_move
                 && self.params.enable_futility_pruning
                 && depth <= self.params.futility_min_depth
-                && !self.is_in_check()
+                && !in_check  // Don't prune if in check
                 && !self.is_endgame()
                 && alpha > -INFINITE + self.params.futility_margin;
 
@@ -559,9 +590,9 @@ impl Search {
                 };
 
                 let search_depth = if lmr_reduction > 0 {
-                    depth - 1 - lmr_reduction
+                    depth - 1 - lmr_reduction + extension
                 } else {
-                    depth - 1
+                    depth - 1 + extension
                 };
 
                 // First try reduced depth if LMR applies
@@ -571,7 +602,8 @@ impl Search {
                     // Research at full depth if reduced search fails high
                     if reduced_score > alpha {
                         self.stats.inc_lmr_reduction();
-                        let full_score = self.negamax_pv(depth - 1, -beta, -alpha, ply + 1);
+                        let full_score =
+                            self.negamax_pv(depth - 1 + extension, -beta, -alpha, ply + 1);
                         if full_score == i16::MIN {
                             i16::MAX
                         } else {
@@ -633,10 +665,10 @@ impl Search {
         best
     }
 
-    /// Static evaluation (phase 1 placeholder)
+    /// Static evaluation with PSQT (piece-square tables)
     fn static_eval(&self) -> i16 {
-        // Simple material evaluation for phase 1
-        self.material_eval()
+        // Use full evaluation with material + PSQT
+        crate::eval::evaluate(&self.board)
     }
 
     /// Quiescence search - searches only noisy moves (captures, promotions, checks)
@@ -672,35 +704,59 @@ impl Search {
             alpha = stand_pat;
         }
 
-        // Depth limit reached or in check - stop searching
-        if depth == 0 || self.is_in_check() {
+        // Depth limit reached - stop searching
+        if depth == 0 {
             return stand_pat;
         }
 
         // Generate all moves to filter for noisy ones
         let all_moves = self.board.generate_moves();
 
-        // Filter only noisy moves: captures, promotions, checks, castling
-        let mut noisy_moves = Vec::new();
-        for &mv in &all_moves {
-            let is_noisy = move_captured(mv).is_some()            // captures
-                || move_flag(mv, FLAG_PROMOTION)                // promotions
-                || move_flag(mv, FLAG_CASTLE_KING)               // castling
-                || move_flag(mv, FLAG_CASTLE_QUEEN)              // castling
-                || self.move_gives_check(mv); // gives check
-
-            if is_noisy {
-                noisy_moves.push(mv);
+        // Check for mate or stalemate (no legal moves)
+        if all_moves.is_empty() {
+            if self.is_in_check() {
+                return -MATE; // Checkmate
+            } else {
+                return 0; // Stalemate
             }
         }
 
-        // If no noisy moves, return stand pat
-        if noisy_moves.is_empty() {
-            return stand_pat;
-        }
+        // If in check, we must search ALL evasions, not just noisy moves
+        // This ensures we don't miss mate when all evasions are quiet moves
+        let in_check = self.is_in_check();
 
-        // Order noisy moves: use MVV-LVA for better pruning
-        noisy_moves.sort_by(|&a, &b| {
+        // Filter moves to search:
+        // - If in check: search ALL evasions (critical to avoid missing mate!)
+        // - Otherwise: only noisy moves (captures, promotions, checks, castling)
+        let moves_to_search = if in_check {
+            // In check: search all evasions
+            all_moves
+        } else {
+            // Not in check: filter only noisy moves
+            let mut noisy_moves = Vec::new();
+            for &mv in &all_moves {
+                let is_noisy = move_captured(mv).is_some()            // captures
+                    || move_flag(mv, FLAG_PROMOTION)                // promotions
+                    || move_flag(mv, FLAG_CASTLE_KING)               // castling
+                    || move_flag(mv, FLAG_CASTLE_QUEEN)              // castling
+                    || self.move_gives_check(mv); // gives check
+
+                if is_noisy {
+                    noisy_moves.push(mv);
+                }
+            }
+
+            // If no noisy moves, return stand pat
+            if noisy_moves.is_empty() {
+                return stand_pat;
+            }
+
+            noisy_moves
+        };
+
+        // Order moves: use MVV-LVA for better pruning (captures first)
+        let mut moves_to_search = moves_to_search; // Make mutable
+        moves_to_search.sort_by(|&a, &b| {
             let a_capture = move_captured(a).is_some();
             let b_capture = move_captured(b).is_some();
 
@@ -740,9 +796,9 @@ impl Search {
             }
         });
 
-        // Search noisy moves
+        // Search moves (noisy moves or all evasions if in check)
         let mut best_score = stand_pat;
-        for &mv in &noisy_moves {
+        for &mv in &moves_to_search {
             let undo = self.board.make_move(mv);
 
             // Recursive quiescence search with negated bounds
@@ -839,7 +895,9 @@ impl Search {
         let material_score =
             (white_material as i16 - black_material as i16) + (white_kings - black_kings) * 20000;
 
-        // If it's black to move, invert the score
+        // CRITICAL: Return from SIDE-TO-MOVE perspective (negamax convention)
+        // Positive score = good for side to move, negative = bad for side to move
+        // This is required for negamax to work correctly!
         if self.board.side == Color::Black {
             -material_score
         } else {
@@ -1530,8 +1588,9 @@ mod tests {
     #[test]
     fn test_aspiration_window_later() {
         let mut board = Board::new();
+        // Valid complex position for testing aspiration windows
         board
-            .set_from_fen("r3k2r/p1ppppp/8/n1b1b1/b2n2q2p1P/P6NPPP/R3K2R w KQkq - 0 1")
+            .set_from_fen("r3k2r/p1ppqppp/bn6/3pn3/4P3/P1N2N1P/1PPP1PP1/R1BQKB1R w KQkq - 0 1")
             .unwrap();
 
         let mut search = Search::with_board(board);
@@ -1539,8 +1598,8 @@ mod tests {
         // Test with aspiration window
         let (_mv, score) = search.search(Some(3));
 
-        // Should complete without panic
-        assert!(score > -INFINITE);
+        // Should complete without panic (score should be reasonable, not mate)
+        assert!(score > -MATE_THRESHOLD && score < MATE_THRESHOLD);
         // Stats should be recorded
         assert!(search.stats.nodes > 0);
     }

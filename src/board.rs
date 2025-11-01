@@ -91,6 +91,103 @@ pub fn move_flag(m: Move, flag: u32) -> bool {
     (m & flag) != 0
 }
 
+/// Convert a square index (0-63) to UCI notation (e.g., 0 -> "a1", 63 -> "h8")
+fn square_to_uci(sq: usize) -> String {
+    let file = (sq % 8) as u8;
+    let rank = (sq / 8) as u8;
+    let file_char = (b'a' + file) as char;
+    let rank_char = (b'1' + rank) as char;
+    format!("{}{}", file_char, rank_char)
+}
+
+/// Convert a Move to UCI notation (e.g., "e2e4" or "e7e8q")
+pub fn move_to_uci(m: Move) -> String {
+    if m == 0 {
+        return "0000".to_string();
+    }
+
+    let from = move_from_sq(m);
+    let to = move_to_sq(m);
+    let mut uci = format!("{}{}", square_to_uci(from), square_to_uci(to));
+
+    // Add promotion piece if applicable
+    if let Some(promo) = move_promotion(m) {
+        let promo_char = match promo {
+            PieceKind::Knight => 'n',
+            PieceKind::Bishop => 'b',
+            PieceKind::Rook => 'r',
+            PieceKind::Queen => 'q',
+            _ => 'q', // Default to queen for invalid promotions
+        };
+        uci.push(promo_char);
+    }
+
+    uci
+}
+
+/// Convert UCI notation to a square index (e.g., "e2" -> 12, "a1" -> 0)
+fn uci_to_square(uci: &str) -> Result<usize, &'static str> {
+    if uci.len() < 2 {
+        return Err("Invalid square notation");
+    }
+
+    let bytes = uci.as_bytes();
+    let file = bytes[0];
+    let rank = bytes[1];
+
+    if !(b'a'..=b'h').contains(&file) || !(b'1'..=b'8').contains(&rank) {
+        return Err("Invalid square notation");
+    }
+
+    let file_idx = (file - b'a') as usize;
+    let rank_idx = (rank - b'1') as usize;
+
+    Ok(rank_idx * 8 + file_idx)
+}
+
+/// Parse a UCI move string and find the corresponding move in the legal moves list
+/// Returns None if the move is illegal or cannot be parsed
+pub fn parse_uci_move(board: &mut Board, uci: &str) -> Result<Move, &'static str> {
+    if uci.len() < 4 {
+        return Err("UCI move too short");
+    }
+
+    // Parse from and to squares
+    let from = uci_to_square(&uci[0..2])?;
+    let to = uci_to_square(&uci[2..4])?;
+
+    // Parse promotion if present
+    let promotion = if uci.len() >= 5 {
+        match uci.chars().nth(4) {
+            Some('q') => Some(PieceKind::Queen),
+            Some('r') => Some(PieceKind::Rook),
+            Some('b') => Some(PieceKind::Bishop),
+            Some('n') => Some(PieceKind::Knight),
+            _ => return Err("Invalid promotion piece"),
+        }
+    } else {
+        None
+    };
+
+    // Generate legal moves and find matching move
+    let legal_moves = board.generate_moves();
+
+    for &mv in &legal_moves {
+        if move_from_sq(mv) == from && move_to_sq(mv) == to {
+            // Check promotion matches if applicable
+            if let Some(promo) = promotion {
+                if move_promotion(mv) == Some(promo) {
+                    return Ok(mv);
+                }
+            } else if move_promotion(mv).is_none() {
+                return Ok(mv);
+            }
+        }
+    }
+
+    Err("Move not found in legal moves")
+}
+
 // Costruzione mossa
 pub fn new_move(
     from: usize,
@@ -125,6 +222,7 @@ pub struct Undo {
     pub prev_fullmove: u16,
     pub prev_side: Color,
     pub prev_zobrist: u64,
+    pub promoted_piece: Option<PieceKind>, // The piece type after promotion (if any)
 }
 
 #[derive(Clone)]
@@ -270,6 +368,12 @@ impl Board {
         } else {
             None
         };
+        let promoted_piece = if move_flag(mv, FLAG_PROMOTION) {
+            move_promotion(mv)
+        } else {
+            None
+        };
+
         let undo = Undo {
             from,
             to,
@@ -283,6 +387,7 @@ impl Board {
             prev_fullmove: self.fullmove,
             prev_side: self.side,
             prev_zobrist: self.zobrist,
+            promoted_piece,
         };
         // Update Zobrist incrementally (undo still holds previous hash)
         crate::zobrist::init_zobrist();
@@ -315,6 +420,13 @@ impl Board {
             // Castling rights changes
             let old_r = self.castling as usize;
             self.update_castling_after_move(color, piece, from);
+            // IMPORTANTE: se catturiamo una torre avversaria sulla sua casella iniziale,
+            // l'avversario perde il diritto di arrocco relativo
+            if let Some(capt) = captured {
+                if capt == PieceKind::Rook {
+                    self.update_castling_on_rook_capture(captured_sq.unwrap());
+                }
+            }
             let new_r = self.castling as usize;
             if old_r != new_r {
                 self.zobrist ^= crate::zobrist::ZOB_CASTLING[old_r];
@@ -376,6 +488,38 @@ impl Board {
             piece
         };
         self.set_piece(to, moved_piece, color);
+
+        // Handle castling: move the rook as well
+        if move_flag(mv, FLAG_CASTLE_KING) {
+            // Kingside castle
+            let (rook_from, rook_to) = if color == Color::White {
+                (7, 5) // h1 -> f1
+            } else {
+                (63, 61) // h8 -> f8
+            };
+            self.remove_piece(rook_from, PieceKind::Rook, color);
+            self.set_piece(rook_to, PieceKind::Rook, color);
+            // Update Zobrist for rook move
+            unsafe {
+                self.zobrist ^= crate::zobrist::ZOB_PIECE[piece_index(PieceKind::Rook, color)][rook_from];
+                self.zobrist ^= crate::zobrist::ZOB_PIECE[piece_index(PieceKind::Rook, color)][rook_to];
+            }
+        } else if move_flag(mv, FLAG_CASTLE_QUEEN) {
+            // Queenside castle
+            let (rook_from, rook_to) = if color == Color::White {
+                (0, 3) // a1 -> d1
+            } else {
+                (56, 59) // a8 -> d8
+            };
+            self.remove_piece(rook_from, PieceKind::Rook, color);
+            self.set_piece(rook_to, PieceKind::Rook, color);
+            // Update Zobrist for rook move
+            unsafe {
+                self.zobrist ^= crate::zobrist::ZOB_PIECE[piece_index(PieceKind::Rook, color)][rook_from];
+                self.zobrist ^= crate::zobrist::ZOB_PIECE[piece_index(PieceKind::Rook, color)][rook_to];
+            }
+        }
+
         self.refresh_occupancy();
 
         // (debug checks removed)
@@ -409,11 +553,19 @@ impl Board {
         self.ep = undo.prev_ep;
         self.castling = undo.prev_castling;
         // Restore piece bitboards and king square
-        let moved_piece = undo.moved_piece; // promotion piece already stored in undo.moved_piece
+        let moved_piece = undo.moved_piece; // This is the ORIGINAL piece (e.g., Pawn before promotion)
         let mover_color = self.side; // self.side was restored to the mover's color above
 
-        // Remove moved piece from destination and put it back on origin
-        self.remove_piece(undo.to, moved_piece, mover_color);
+        // For promotions, we need to remove the promoted piece (Queen/Rook/etc) from destination
+        // not the original pawn!
+        let piece_on_dest = if let Some(promo) = undo.promoted_piece {
+            promo
+        } else {
+            moved_piece
+        };
+
+        // Remove the actual piece from destination and put back the original piece on origin
+        self.remove_piece(undo.to, piece_on_dest, mover_color);
         self.set_piece(undo.from, moved_piece, mover_color);
 
         if moved_piece == PieceKind::King {
@@ -434,6 +586,27 @@ impl Board {
             self.set_piece(undo.captured_sq.unwrap(), capt, cap_color);
         }
 
+        // Handle castling: unmove the rook as well
+        if move_flag(undo.flags, FLAG_CASTLE_KING) {
+            // Kingside castle - restore rook
+            let (rook_from, rook_to) = if mover_color == Color::White {
+                (7, 5) // h1 -> f1 (during make), so restore f1 -> h1
+            } else {
+                (63, 61) // h8 -> f8 (during make), so restore f8 -> h8
+            };
+            self.remove_piece(rook_to, PieceKind::Rook, mover_color);
+            self.set_piece(rook_from, PieceKind::Rook, mover_color);
+        } else if move_flag(undo.flags, FLAG_CASTLE_QUEEN) {
+            // Queenside castle - restore rook
+            let (rook_from, rook_to) = if mover_color == Color::White {
+                (0, 3) // a1 -> d1 (during make), so restore d1 -> a1
+            } else {
+                (56, 59) // a8 -> d8 (during make), so restore d8 -> a8
+            };
+            self.remove_piece(rook_to, PieceKind::Rook, mover_color);
+            self.set_piece(rook_from, PieceKind::Rook, mover_color);
+        }
+
         self.refresh_occupancy();
 
         // Restore occupancy and hash
@@ -441,22 +614,64 @@ impl Board {
     }
 
     // Aggiorna castling rights dopo che il pezzo/pioniere si è mosso da from
+    // IMPORTANTE: questa funzione deve essere chiamata PRIMA di make_move
+    // per gestire sia il movimento del proprio pezzo che la cattura di torre avversaria
     fn update_castling_after_move(&mut self, side: Color, piece: PieceKind, from: usize) {
         const KING_SQ: [usize; 2] = [4, 60]; // white king e1, black king e8
         const ROOK_KS: [usize; 2] = [7, 63]; // white rook h1, black rook h8
         const ROOK_QS: [usize; 2] = [0, 56]; // rooks a1,a8
 
-        let s = side as usize;
-        if piece == PieceKind::King && from == KING_SQ[s] {
-            self.castling &= !(0b11 << (2 * s as u8));
-        }
-        if piece == PieceKind::Rook {
-            if from == ROOK_KS[s] {
-                self.castling &= !(1 << (2 * s as u8));
-            } else if from == ROOK_QS[s] {
-                self.castling &= !(1 << (2 * s as u8 + 1));
+        // Bit layout: bit 3=K, bit 2=Q, bit 1=k, bit 0=q
+        // Caso 1: il proprio Re si muove -> perde entrambi i diritti di arrocco
+        if piece == PieceKind::King && from == KING_SQ[side as usize] {
+            if side == Color::White {
+                self.castling &= !0b1100u8; // rimuove K e Q (bit 3 e 2)
+            } else {
+                self.castling &= !0b0011u8; // rimuove k e q (bit 1 e 0)
             }
         }
+        // Caso 2: la propria Torre si muove dalla casella iniziale -> perde il diritto relativo
+        if piece == PieceKind::Rook {
+            if side == Color::White {
+                if from == ROOK_KS[0] {
+                    self.castling &= !0b1000u8; // rimuove K (bit 3)
+                } else if from == ROOK_QS[0] {
+                    self.castling &= !0b0100u8; // rimuove Q (bit 2)
+                }
+            } else {
+                if from == ROOK_KS[1] {
+                    self.castling &= !0b0010u8; // rimuove k (bit 1)
+                } else if from == ROOK_QS[1] {
+                    self.castling &= !0b0001u8; // rimuove q (bit 0)
+                }
+            }
+        }
+    }
+
+    // Aggiorna castling rights quando catturiamo una torre avversaria
+    // sulla sua casella iniziale (l'avversario perde il diritto di arrocco relativo)
+    fn update_castling_on_rook_capture(&mut self, captured_square: usize) {
+        const ROOK_KS: [usize; 2] = [7, 63]; // white rook h1, black rook h8
+        const ROOK_QS: [usize; 2] = [0, 56]; // rooks a1,a8
+
+        let old_castling = self.castling;
+        // Verifica se abbiamo catturato una torre bianca sulle sue caselle iniziali
+        if captured_square == ROOK_KS[0] {
+            // Catturata torre bianca su h1 -> Bianco perde castling kingside
+            self.castling &= !0b1000u8;
+        } else if captured_square == ROOK_QS[0] {
+            // Catturata torre bianca su a1 -> Bianco perde castling queenside
+            self.castling &= !0b0100u8;
+        } else if captured_square == ROOK_KS[1] {
+            // Catturata torre nera su h8 -> Nero perde castling kingside
+            self.castling &= !0b0010u8;
+        } else if captured_square == ROOK_QS[1] {
+            // Catturata torre nera su a8 -> Nero perde castling queenside
+            self.castling &= !0b0001u8;
+        }
+
+        // Removed debug logging
+        let _ = old_castling; // Suppress unused variable warning
     }
 
     // Public method to force recalc Zobrist
@@ -671,7 +886,7 @@ impl Board {
             };
             out.push(new_move(from, to, PieceKind::Pawn, None, None, FLAG_NONE));
         }
-        // Captures (including ep target)
+        // Captures (normal, not including ep which is handled separately)
         let right_capture = match side {
             Color::White => ((pawns & crate::utils::NOT_FILE_H) << 9) & enemy_occ,
             Color::Black => ((pawns & crate::utils::NOT_FILE_H) >> 7) & enemy_occ,
@@ -682,30 +897,14 @@ impl Board {
                 Color::White => to - 9,
                 Color::Black => to + 7,
             };
-            let (_capsq, flags) = if ep_target.map_or(false, |ep| to == ep as usize) {
-                let ep_sq = ep_target.unwrap() as usize;
-                (
-                    match side {
-                        Color::White => (ep_sq as i32 - 8) as usize,
-                        Color::Black => (ep_sq as i32 + 8) as usize,
-                    },
-                    FLAG_EN_PASSANT | FLAG_CAPTURE,
-                )
-            } else {
-                (to, FLAG_CAPTURE)
-            };
-            let captured_kind = if flags & FLAG_EN_PASSANT != 0 {
-                PieceKind::Pawn
-            } else {
-                self.piece_on(to).unwrap().0
-            };
+            let captured_kind = self.piece_on(to).unwrap().0;
             out.push(new_move(
                 from,
                 to,
                 PieceKind::Pawn,
                 Some(captured_kind),
                 None,
-                flags,
+                FLAG_CAPTURE,
             ));
         }
         let left_capture = match side {
@@ -718,31 +917,60 @@ impl Board {
                 Color::White => to - 7,
                 Color::Black => to + 9,
             };
-            let (_capsq, flags) = if ep_target.map_or(false, |ep| to == ep as usize) {
-                let ep_sq = ep_target.unwrap() as usize;
-                (
-                    match side {
-                        Color::White => (ep_sq as i32 - 8) as usize,
-                        Color::Black => (ep_sq as i32 + 8) as usize,
-                    },
-                    FLAG_EN_PASSANT | FLAG_CAPTURE,
-                )
-            } else {
-                (to, FLAG_CAPTURE)
-            };
-            let captured_kind = if flags & FLAG_EN_PASSANT != 0 {
-                PieceKind::Pawn
-            } else {
-                self.piece_on(to).unwrap().0
-            };
+            let captured_kind = self.piece_on(to).unwrap().0;
             out.push(new_move(
                 from,
                 to,
                 PieceKind::Pawn,
                 Some(captured_kind),
                 None,
-                flags,
+                FLAG_CAPTURE,
             ));
+        }
+        // En passant captures (handled separately because ep square is empty)
+        if let Some(ep_sq) = ep_target {
+            let ep_sq = ep_sq as usize;
+            // Check which pawns can capture en passant to this square
+            let ep_attackers = match side {
+                Color::White => {
+                    // For white, ep_sq is on rank 6, pawns attack from rank 5
+                    // Right diagonal: from ep_sq-9, left diagonal: from ep_sq-7
+                    let mut attackers = 0u64;
+                    // Attack from left (file-1)
+                    if ep_sq % 8 > 0 {
+                        attackers |= pawns & (1u64 << (ep_sq - 9));
+                    }
+                    // Attack from right (file+1)
+                    if ep_sq % 8 < 7 {
+                        attackers |= pawns & (1u64 << (ep_sq - 7));
+                    }
+                    attackers
+                }
+                Color::Black => {
+                    // For black, ep_sq is on rank 3, pawns attack from rank 4
+                    let mut attackers = 0u64;
+                    // Attack from left (file-1)
+                    if ep_sq % 8 > 0 {
+                        attackers |= pawns & (1u64 << (ep_sq + 7));
+                    }
+                    // Attack from right (file+1)
+                    if ep_sq % 8 < 7 {
+                        attackers |= pawns & (1u64 << (ep_sq + 9));
+                    }
+                    attackers
+                }
+            };
+            let mut bb_ep = ep_attackers;
+            while let Some(from) = crate::utils::pop_lsb(&mut bb_ep) {
+                out.push(new_move(
+                    from,
+                    ep_sq,
+                    PieceKind::Pawn,
+                    Some(PieceKind::Pawn),
+                    None,
+                    FLAG_EN_PASSANT | FLAG_CAPTURE,
+                ));
+            }
         }
         // Promotions (push and capture onto promotion rank)
         let promo_push_dest = push_dest & prom_rank;
@@ -1431,6 +1659,7 @@ impl Board {
             prev_fullmove: self.fullmove,
             prev_side: self.side,
             prev_zobrist: self.zobrist,
+            promoted_piece: None,
         };
 
         // Update Zobrist - only side toggle needed
