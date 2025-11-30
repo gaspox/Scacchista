@@ -16,6 +16,8 @@ struct Args {
     fen: String,
     #[arg(short, long, default_value_t = 4)]
     depth: u8,
+    #[arg(long, default_value_t = false)]
+    divide: bool,
 }
 fn perft_scacchista(board: &mut Board, depth: u8, path: &mut Vec<MoveType>) -> u64 {
     if depth == 0 {
@@ -144,6 +146,46 @@ fn perft_shakmaty(pos: &Chess, depth: u8) -> u64 {
     nodes
 }
 
+fn perft_simple(board: &mut Board, depth: u8) -> u64 {
+    if depth == 0 {
+        return 1;
+    }
+    let moves = board.generate_moves();
+    let mut nodes = 0u64;
+    for mv in moves {
+        let undo = board.make_move(mv);
+        nodes += perft_simple(board, depth - 1);
+        board.unmake_move(undo);
+    }
+    nodes
+}
+
+fn perft_divide(board: &mut Board, depth: u8) {
+    use scacchista::board::move_to_uci;
+
+    let moves = board.generate_moves();
+    println!("Total legal moves from position: {}", moves.len());
+    println!("\nPerft divide at depth {}:", depth);
+    println!("{:<10} | Nodes", "Move");
+    println!("{:-<10}-+-------", "");
+
+    let mut total = 0u64;
+    for mv in moves {
+        let undo = board.make_move(mv);
+        let count = if depth > 1 {
+            perft_simple(board, depth - 1)
+        } else {
+            1
+        };
+        board.unmake_move(undo);
+
+        println!("{:<10} : {}", move_to_uci(mv), count);
+        total += count;
+    }
+
+    println!("\nTotal nodes: {}", total);
+}
+
 fn main() {
     scacchista::init();
     // Force initialization of attack tables
@@ -151,6 +193,16 @@ fn main() {
     scacchista::zobrist::init_zobrist();
 
     let args = Args::parse();
+
+    if args.divide {
+        // Divide mode: just show per-move breakdown
+        let mut board = Board::new();
+        board.set_from_fen(&args.fen).unwrap();
+        println!("Running perft divide on FEN: {}", args.fen);
+        println!("\nBoard:\n{}", board);
+        perft_divide(&mut board, args.depth);
+        return;
+    }
 
     println!("Running perft on FEN: {} at depth {}", args.fen, args.depth);
 

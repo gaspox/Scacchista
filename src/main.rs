@@ -1,6 +1,5 @@
 //! Scacchista UCI chess engine main entry point.
 
-
 fn main() {
     scacchista::init();
 

@@ -28,7 +28,6 @@ impl TimeManager {
 
         // fall back to configured per-move millisecond default
 
-
         time_mgmt.msec_per_move
     }
 }

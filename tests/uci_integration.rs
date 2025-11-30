@@ -2,7 +2,6 @@
 
 use scacchista::uci::{process_uci_line, UciEngine};
 
-
 #[test]
 fn test_uci_engine_lifecycle() {
     let mut engine = UciEngine::new();
@@ -39,6 +38,6 @@ fn test_go_command_mock() {
     process_uci_line("position startpos", &mut engine);
     let responses = process_uci_line("go depth 5", &mut engine);
     assert_eq!(responses.len(), 2);
-    assert!(responses[0].starts_with("info string"));
+    assert!(responses[0].starts_with("info depth")); // Changed from "info string"
     assert!(responses[1].starts_with("bestmove"));
 }
