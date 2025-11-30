@@ -267,24 +267,14 @@ impl Search {
             self.stats.inc_root_node();
 
             let undo = self.board.make_move(mv);
-            let (score, _node_type) = if depth <= self.params.qsearch_depth {
-                // When close to leaf, use quiescence search
-                // CRITICAL: Must negate score and swap alpha/beta like negamax!
-                (
-                    -self.qsearch(-beta, -alpha, self.params.qsearch_depth),
-                    NodeType::Exact,
-                )
+            // Always do full negamax search from root
+            let score = -self.negamax_pv(depth - 1, -beta, -alpha, 0);
+            let node_type = if score >= beta {
+                NodeType::LowerBound
+            } else if score <= alpha {
+                NodeType::UpperBound
             } else {
-                // Recursive search
-                let score = -self.negamax_pv(depth - 1, -beta, -alpha, 0);
-                let node_type = if score >= beta {
-                    NodeType::LowerBound
-                } else if score <= alpha {
-                    NodeType::UpperBound
-                } else {
-                    NodeType::Exact
-                };
-                (score, node_type)
+                NodeType::Exact
             };
             self.board.unmake_move(undo);
 

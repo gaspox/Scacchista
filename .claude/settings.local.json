@@ -19,7 +19,14 @@
       "Bash(./target/release/perft:*)",
       "Bash(./target/release/perft --depth 4)",
       "Bash(./target/release/stress_search_test:*)",
-      "Bash(./target/release/simple_search_test:*)"
+      "Bash(./target/release/simple_search_test:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Complete UCI implementation with async search and robust error handling\n\nMajor changes:\n- UCI loop: full implementation of UCI options (Hash, Threads, SyzygyPath, Style, UseExperienceBook)\n- UCI loop: FEN parsing and atomic move validation in position command\n- UCI loop: go infinite support with async_search_active flag\n- Thread manager: async search methods (start_async_search, wait_async_result)\n- Thread manager: mutex poisoning recovery for production robustness\n- Thread manager: increased timeout to 10min for deep searches, reduced stop latency to 10ms\n- Perft: additional test positions and improved output\n- Tests: updated perft and UCI integration tests\n- gitignore: added slow64_linux benchmark engine\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(cargo test:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo build:*)",
+      "Bash(/home/gaspare/Documenti/Tal/target/release/scacchista:*)",
+      "Bash(timeout 10 /home/gaspare/Documenti/Tal/slow64_linux:*)",
+      "Bash(./target/release/scacchista:*)"
     ],
     "deny": [],
     "ask": []

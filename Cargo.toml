@@ -32,18 +32,6 @@ path = "test_board.rs"
 name = "test_qsearch_simple"
 path = "test_qsearch_simple.rs"
 
-[[bin]]
-name = "test_make_unmake"
-path = "test_make_unmake.rs"
-
-[[bin]]
-name = "compare_moves"
-path = "compare_moves.rs"
-
-[[bin]]
-name = "debug_perft_divide"
-path = "debug_perft_divide.rs"
-
 [profile.release]
 lto = true
 codegen-units = 1

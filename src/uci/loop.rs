@@ -3,6 +3,7 @@
 use super::parser::{parse_uci_command, UciCommand};
 use crate::board::{move_to_uci, parse_uci_move, Board};
 use std::io::{self, BufRead, Write};
+use std::time::Instant;
 
 use crate::uci::options::UciOptions;
 
@@ -154,12 +155,14 @@ impl UciEngine {
                             board: self.board.clone(),
                             params,
                         };
+                        let search_start = Instant::now();
                         let (mv, score) = tm.submit_job(job);
+                        let search_time_ms = search_start.elapsed().as_millis() as u64;
                         res.push(format!(
                             "info depth {} score cp {} time {}",
                             depth.unwrap_or(3),
                             score,
-                            time_alloc
+                            search_time_ms
                         ));
 
                         // Check if position is terminal (no legal moves)
