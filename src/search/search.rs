@@ -240,7 +240,7 @@ impl Search {
     }
 
     /// Iterative deepening framework (phase 1)
-    fn iddfs(&mut self, depth: u8, best_move: Move, alpha: i16, beta: i16) -> (Move, i16) {
+    fn iddfs(&mut self, depth: u8, best_move: Move, mut alpha: i16, beta: i16) -> (Move, i16) {
         // Root search with move ordering
         let mut best_root_move = best_move;
         let mut best_score = -INFINITE;
@@ -282,6 +282,10 @@ impl Search {
             if score > best_score {
                 best_score = score;
                 best_root_move = mv;
+                // Update alpha for subsequent moves
+                if score > alpha {
+                    alpha = score;
+                }
             }
 
             if score >= beta {
@@ -310,7 +314,9 @@ impl Search {
 
         // Check transposition table
         let key = self.board.recalc_zobrist();
-        let is_pv_node = beta - alpha > 1;  // PV node has open window
+        // FIX: Use i32 to avoid overflow when computing window size
+        // (beta - alpha can overflow i16 when beta=30000, alpha=-30000)
+        let is_pv_node = (beta as i32) - (alpha as i32) > 1;  // PV node has open window
         if let Some(entry) = self.tt.probe(key) {
             self.stats.inc_tt_hit();
             // In PV nodes, only use TT for move ordering, not for cutoffs
@@ -369,12 +375,9 @@ impl Search {
 
             // Perform reduced-depth search with a null window
             // After null move, the side to move has changed, so we search from opponent's perspective
-            let null_alpha = if beta > i16::MIN + 1 {
-                -beta + 1
-            } else {
-                i16::MAX
-            };
-            let null_beta = if beta > i16::MIN { -beta } else { i16::MAX };
+            // Null window is [-beta, -beta+1] to verify fail-high
+            let null_alpha = if beta > i16::MIN { -beta } else { i16::MAX };
+            let null_beta = if beta < i16::MAX { -beta + 1 } else { i16::MIN };
             let null_search_score = self.negamax_pv(null_depth, null_alpha, null_beta, ply + 1);
 
             // Handle overflow when negating
