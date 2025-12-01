@@ -154,6 +154,16 @@ impl Search {
                 }
             }
 
+            // Check time limit before starting new depth
+            if self.params.time_limit_ms > 0 {
+                if let Some(start) = self.stats.start_time {
+                    if start.elapsed() > std::time::Duration::from_millis(self.params.time_limit_ms) {
+                        // Time expired, return best move found so far
+                        break;
+                    }
+                }
+            }
+
             // Use aspiration window after depth 1 (we need a baseline score)
             if depth <= 1 {
                 // First depth: full window search

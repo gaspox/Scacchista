@@ -34,7 +34,13 @@
       "Bash({ time echo -e \"uci\\nisready\\nposition startpos\\ngo depth 6\\nstop\")",
       "Bash(RUST_LOG=debug echo:*)",
       "Bash(pkill:*)",
-      "Bash(time echo:*)"
+      "Bash(time echo:*)",
+      "Bash({ time echo -e \"uci\\nposition startpos\\ngo depth 6\\nquit\")",
+      "Bash({ time echo -e \"uci\\nposition startpos\\ngo depth 6\\nstop\")",
+      "Bash(/usr/bin/time -v sh -c 'echo -e \"\"uci\\nposition startpos\\ngo depth 6\\nquit\"\" | ./target/release/scacchista')",
+      "Bash(/usr/bin/time:*)",
+      "Bash(printf:*)",
+      "Bash(ldd:*)"
     ],
     "deny": [],
     "ask": []

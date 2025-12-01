@@ -143,10 +143,11 @@ impl UciEngine {
                 } else {
                     // SYNC MODE: go depth/movetime - traditional blocking search
                     // Build search params
-                    // If depth is specified, use it; otherwise use depth 3 (fast)
-                    // Time limit is used as a safety timeout
+                    // If depth is specified, use it; otherwise use a high depth (99)
+                    // and let time management control the search duration
+                    let max_search_depth = depth.unwrap_or(99);
                     let params = crate::search::SearchParams::new()
-                        .max_depth(depth.unwrap_or(3))
+                        .max_depth(max_search_depth)
                         .time_limit(time_alloc);
 
                     // Submit job to persistent thread manager
