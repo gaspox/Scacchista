@@ -63,7 +63,7 @@ impl Default for SearchParams {
             futility_margin: 100, // 1.0 pawn
             futility_min_depth: 3,
             killer_moves_count: 2,
-            qsearch_depth: 6,
+            qsearch_depth: 4,
         }
     }
 }

@@ -26,7 +26,13 @@
       "Bash(cargo build:*)",
       "Bash(/home/gaspare/Documenti/Tal/target/release/scacchista:*)",
       "Bash(timeout 10 /home/gaspare/Documenti/Tal/slow64_linux:*)",
-      "Bash(./target/release/scacchista:*)"
+      "Bash(./target/release/scacchista:*)",
+      "Bash(timeout 3 ./target/release/scacchista:*)",
+      "Bash(timeout:*)",
+      "Bash({ time echo -e \"uci\\nisready\\nposition startpos\\ngo depth 6\\nquit\")",
+      "Bash(})",
+      "Bash({ time echo -e \"uci\\nisready\\nposition startpos\\ngo depth 6\\nstop\")",
+      "Bash(RUST_LOG=debug echo:*)"
     ],
     "deny": [],
     "ask": []

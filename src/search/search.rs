@@ -310,9 +310,12 @@ impl Search {
 
         // Check transposition table
         let key = self.board.recalc_zobrist();
+        let is_pv_node = beta - alpha > 1;  // PV node has open window
         if let Some(entry) = self.tt.probe(key) {
             self.stats.inc_tt_hit();
-            if entry.depth >= depth {
+            // In PV nodes, only use TT for move ordering, not for cutoffs
+            // This prevents score instability from aspiration window re-searches
+            if !is_pv_node && entry.depth >= depth {
                 let (entry_alpha, entry_beta) = entry.bound();
                 if entry_beta <= alpha {
                     return entry_alpha; // Upper bound cutoff
@@ -569,52 +572,46 @@ impl Search {
                 }
             }
 
-            let score = if depth <= self.params.qsearch_depth {
-                self.qsearch(alpha, beta, self.params.qsearch_depth)
+            // Late Move Reductions logic
+            let lmr_reduction = if is_quiet && move_count > 3 {
+                self.get_lmr_reduction(depth, move_count, is_quiet, gives_check)
             } else {
-                // Late Move Reductions logic
-                let lmr_reduction = if is_quiet && move_count > 3 {
-                    self.get_lmr_reduction(depth, move_count, is_quiet, gives_check)
-                } else {
-                    0
-                };
+                0
+            };
 
-                let search_depth = if lmr_reduction > 0 {
-                    depth - 1 - lmr_reduction + extension
-                } else {
-                    depth - 1 + extension
-                };
+            let search_depth = if lmr_reduction > 0 {
+                depth - 1 - lmr_reduction + extension
+            } else {
+                depth - 1 + extension
+            };
 
-                // First try reduced depth if LMR applies
-                let child_score = if lmr_reduction > 0 {
-                    let reduced_score = self.negamax_pv(search_depth, -alpha - 1, -alpha, ply + 1);
+            // First try reduced depth if LMR applies
+            let score = if lmr_reduction > 0 {
+                let reduced_score = self.negamax_pv(search_depth, -alpha - 1, -alpha, ply + 1);
 
-                    // Research at full depth if reduced search fails high
-                    if reduced_score > alpha {
-                        self.stats.inc_lmr_reduction();
-                        let full_score =
-                            self.negamax_pv(depth - 1 + extension, -beta, -alpha, ply + 1);
-                        if full_score == i16::MIN {
-                            i16::MAX
-                        } else {
-                            -full_score
-                        }
-                    } else if reduced_score == i16::MIN {
+                // Research at full depth if reduced search fails high
+                if reduced_score > alpha {
+                    self.stats.inc_lmr_reduction();
+                    let full_score =
+                        self.negamax_pv(depth - 1 + extension, -beta, -alpha, ply + 1);
+                    if full_score == i16::MIN {
                         i16::MAX
                     } else {
-                        -reduced_score
+                        -full_score
                     }
+                } else if reduced_score == i16::MIN {
+                    i16::MAX
                 } else {
-                    // Normal search without reduction
-                    let child_score = self.negamax_pv(search_depth, -beta, -alpha, ply + 1);
-                    if child_score == i16::MIN {
-                        i16::MAX
-                    } else {
-                        -child_score
-                    }
-                };
-
-                child_score
+                    -reduced_score
+                }
+            } else {
+                // Normal search without reduction
+                let child_score = self.negamax_pv(search_depth, -beta, -alpha, ply + 1);
+                if child_score == i16::MIN {
+                    i16::MAX
+                } else {
+                    -child_score
+                }
             };
 
             self.board.unmake_move(undo);
