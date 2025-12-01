@@ -32,7 +32,9 @@
       "Bash({ time echo -e \"uci\\nisready\\nposition startpos\\ngo depth 6\\nquit\")",
       "Bash(})",
       "Bash({ time echo -e \"uci\\nisready\\nposition startpos\\ngo depth 6\\nstop\")",
-      "Bash(RUST_LOG=debug echo:*)"
+      "Bash(RUST_LOG=debug echo:*)",
+      "Bash(pkill:*)",
+      "Bash(time echo:*)"
     ],
     "deny": [],
     "ask": []

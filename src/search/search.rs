@@ -144,6 +144,8 @@ impl Search {
 
         // Iterative deepening with aspiration windows
         for depth in 1..=max_depth {
+            let nodes_before = self.stats.nodes;
+
             // Check stop flag before starting new depth
             if let Some(ref stop) = self.stop_flag {
                 if stop.load(Ordering::Relaxed) {
@@ -261,7 +263,8 @@ impl Search {
             return (0, sc);
         }
 
-        for (_i, mv) in root_moves.into_iter().enumerate() {
+        let num_root_moves = root_moves.len();
+        for (i, mv) in root_moves.into_iter().enumerate() {
             // Increment node count for root moves
             self.stats.inc_node();
             self.stats.inc_root_node();
@@ -354,7 +357,9 @@ impl Search {
         }
 
         // Null-move pruning: try a reduced-depth search after skipping a turn
+        let is_pv_node = (beta as i32) - (alpha as i32) > 1;
         if self.params.enable_null_move_pruning
+            && !is_pv_node  // Never use null-move in PV nodes
             && depth >= self.params.null_move_min_depth
             && ply > 0  // Not at root
             && !self.is_in_check()

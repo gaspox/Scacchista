@@ -54,12 +54,12 @@ impl Default for SearchParams {
             time_limit_ms: 5000,
             node_limit: 0,
             aspiration_window: 50, // 0.5 pawn
-            enable_null_move_pruning: true,
+            enable_null_move_pruning: false,  // TEMP: disabled for debugging
             null_move_min_depth: 2,
-            enable_lmr: true,
+            enable_lmr: false,  // TEMP: disabled for debugging
             lmr_min_depth: 3,
             lmr_base_reduction: 2,
-            enable_futility_pruning: true,
+            enable_futility_pruning: false,  // TEMP: disabled for debugging
             futility_margin: 100, // 1.0 pawn
             futility_min_depth: 3,
             killer_moves_count: 2,
