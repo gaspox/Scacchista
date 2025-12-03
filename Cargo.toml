@@ -32,6 +32,10 @@ path = "test_board.rs"
 name = "test_qsearch_simple"
 path = "test_qsearch_simple.rs"
 
+[[bin]]
+name = "profile_search"
+path = "profile_search.rs"
+
 [profile.release]
 lto = true
 codegen-units = 1
