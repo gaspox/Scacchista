@@ -65,6 +65,13 @@ pub struct Search {
 
     /// Stop flag for cooperative cancellation of search
     stop_flag: Option<Arc<AtomicBool>>,
+
+    /// Flag indicating time has expired during search
+    /// Used for intra-depth time checking to exit search early
+    time_expired: bool,
+
+    /// Counter for time check sampling (check every N nodes to avoid overhead)
+    time_check_counter: u64,
 }
 
 impl Search {
@@ -90,7 +97,47 @@ impl Search {
             history: [[[0; 64]; 6]; 2],
             see_cache: HashMap::new(),
             stop_flag: None,
+            time_expired: false,
+            time_check_counter: 0,
         }
+    }
+
+    /// Check if time has expired, with sampling to avoid overhead
+    /// Returns true if search should stop immediately
+    /// Only checks actual time every 1024 nodes to minimize syscall overhead
+    fn check_time_expired(&mut self) -> bool {
+        // If already expired, return immediately
+        if self.time_expired {
+            return true;
+        }
+
+        // Check stop flag
+        if let Some(ref stop) = self.stop_flag {
+            if stop.load(Ordering::Relaxed) {
+                self.time_expired = true;
+                return true;
+            }
+        }
+
+        // Sample time check every 1024 nodes to avoid syscall overhead
+        self.time_check_counter += 1;
+        if self.time_check_counter & 0x3FF != 0 {
+            // Not time to check yet (every 1024 nodes)
+            return false;
+        }
+
+        // Actually check time
+        if self.params.time_limit_ms > 0 {
+            if let Some(start) = self.stats.start_time {
+                let elapsed = start.elapsed().as_millis() as u64;
+                if elapsed >= self.params.time_limit_ms {
+                    self.time_expired = true;
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     /// Set stop flag for cooperative cancellation
@@ -139,6 +186,10 @@ impl Search {
         self.stats.start_timing();
         self.tt.new_search();
 
+        // Reset time management state for new search
+        self.time_expired = false;
+        self.time_check_counter = 0;
+
         let mut best_move = 0;
         let mut best_score = -INFINITE;
 
@@ -154,11 +205,18 @@ impl Search {
                 }
             }
 
+            // Check time limit before starting new depth (fast path)
+            if self.time_expired {
+                break;
+            }
+
             // Check time limit before starting new depth
             if self.params.time_limit_ms > 0 {
                 if let Some(start) = self.stats.start_time {
-                    if start.elapsed() > std::time::Duration::from_millis(self.params.time_limit_ms) {
+                    if start.elapsed() > std::time::Duration::from_millis(self.params.time_limit_ms)
+                    {
                         // Time expired, return best move found so far
+                        self.time_expired = true;
                         break;
                     }
                 }
@@ -215,11 +273,25 @@ impl Search {
         self.stats.start_timing();
         self.tt.new_search();
 
+        // Reset time management state for new search
+        self.time_expired = false;
+        self.time_check_counter = 0;
+
+        // Set time limit in params for intra-depth checking
+        // (save original and restore later if needed)
+        let orig_time_limit = self.params.time_limit_ms;
+        self.params.time_limit_ms = time_limit;
+
         let mut best_move = 0;
         let mut best_score = -INFINITE;
 
         // Iterative deepening with time control
         for depth in 1..=max_depth {
+            // Fast path: if time already expired, stop
+            if self.time_expired {
+                break;
+            }
+
             if time_limit > 0
                 && self
                     .stats
@@ -228,25 +300,33 @@ impl Search {
                     .elapsed()
                     > std::time::Duration::from_millis(time_limit)
             {
+                self.time_expired = true;
                 break;
             }
 
             let (mv, score) = self.iddfs(depth, best_move, -INFINITE, INFINITE);
 
+            // If time expired during search, don't use partial results
+            if self.time_expired {
+                break;
+            }
+
             // Stop if we found mate
             if score >= MATE {
+                self.params.time_limit_ms = orig_time_limit;
                 self.stats.update_timing();
                 return (mv, score);
             }
 
             // Update best move and score
-            if depth >= 4 {
-                // Don't update for very shallow searches
+            if depth >= 1 {
+                // Always update best move (even at shallow depth)
                 best_move = mv;
                 best_score = score;
             }
         }
 
+        self.params.time_limit_ms = orig_time_limit;
         self.stats.update_timing();
         (best_move, best_score)
     }
@@ -322,6 +402,14 @@ impl Search {
         // Increment node counter
         self.stats.inc_node();
 
+        // Check time periodically (every 1024 nodes) to allow early exit
+        // This prevents massive time overshoots during deep searches
+        if self.check_time_expired() {
+            // Time expired - return current alpha as best guess
+            // The caller should check time_expired and discard partial results
+            return alpha;
+        }
+
         // Clear SEE cache for this node position
         self.clear_see_cache();
 
@@ -329,7 +417,7 @@ impl Search {
         let key = self.board.recalc_zobrist();
         // FIX: Use i32 to avoid overflow when computing window size
         // (beta - alpha can overflow i16 when beta=30000, alpha=-30000)
-        let is_pv_node = (beta as i32) - (alpha as i32) > 1;  // PV node has open window
+        let is_pv_node = (beta as i32) - (alpha as i32) > 1; // PV node has open window
         if let Some(entry) = self.tt.probe(key) {
             self.stats.inc_tt_hit();
             // In PV nodes, only use TT for move ordering, not for cutoffs
@@ -610,8 +698,7 @@ impl Search {
                 // Research at full depth if reduced search fails high
                 if reduced_score > alpha {
                     self.stats.inc_lmr_reduction();
-                    let full_score =
-                        self.negamax_pv(depth - 1 + extension, -beta, -alpha, ply + 1);
+                    let full_score = self.negamax_pv(depth - 1 + extension, -beta, -alpha, ply + 1);
                     if full_score == i16::MIN {
                         i16::MAX
                     } else {
@@ -692,6 +779,12 @@ impl Search {
     fn qsearch(&mut self, mut alpha: i16, beta: i16, depth: u8) -> i16 {
         // Increment quiescence node counter
         self.stats.inc_qsearch_node();
+
+        // Check time periodically to allow early exit from deep qsearch
+        if self.check_time_expired() {
+            // Return stand pat as approximation when time expires
+            return self.static_eval();
+        }
 
         // Clear SEE cache for this node position
         self.clear_see_cache();

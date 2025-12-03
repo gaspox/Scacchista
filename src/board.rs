@@ -501,8 +501,10 @@ impl Board {
             self.set_piece(rook_to, PieceKind::Rook, color);
             // Update Zobrist for rook move
             unsafe {
-                self.zobrist ^= crate::zobrist::ZOB_PIECE[piece_index(PieceKind::Rook, color)][rook_from];
-                self.zobrist ^= crate::zobrist::ZOB_PIECE[piece_index(PieceKind::Rook, color)][rook_to];
+                self.zobrist ^=
+                    crate::zobrist::ZOB_PIECE[piece_index(PieceKind::Rook, color)][rook_from];
+                self.zobrist ^=
+                    crate::zobrist::ZOB_PIECE[piece_index(PieceKind::Rook, color)][rook_to];
             }
         } else if move_flag(mv, FLAG_CASTLE_QUEEN) {
             // Queenside castle
@@ -515,8 +517,10 @@ impl Board {
             self.set_piece(rook_to, PieceKind::Rook, color);
             // Update Zobrist for rook move
             unsafe {
-                self.zobrist ^= crate::zobrist::ZOB_PIECE[piece_index(PieceKind::Rook, color)][rook_from];
-                self.zobrist ^= crate::zobrist::ZOB_PIECE[piece_index(PieceKind::Rook, color)][rook_to];
+                self.zobrist ^=
+                    crate::zobrist::ZOB_PIECE[piece_index(PieceKind::Rook, color)][rook_from];
+                self.zobrist ^=
+                    crate::zobrist::ZOB_PIECE[piece_index(PieceKind::Rook, color)][rook_to];
             }
         }
 
@@ -711,49 +715,82 @@ impl Board {
         let diagonal_attackers =
             self.piece_bb(PieceKind::Bishop, by) | self.piece_bb(PieceKind::Queen, by);
         if diagonal_attackers != 0 {
-            // northwest
-            let mut s = sq as i8 - 9;
-            while s >= 0 && (s % 8) != 7 {
-                if (1u64 << s) & self.occ != 0 {
-                    if (1u64 << s) & diagonal_attackers != 0 {
-                        return true;
+            // northwest (direction -9): from sq, decrease rank, decrease file
+            // Stop when we reach file A (from_file == 0) or rank 1 (s < 0)
+            let sq_file = sq % 8;
+            if sq_file > 0 {
+                // Can move northwest
+                let mut s = sq as i8 - 9;
+                while s >= 0 {
+                    let s_file = s % 8;
+                    if (1u64 << s) & self.occ != 0 {
+                        if (1u64 << s) & diagonal_attackers != 0 {
+                            return true;
+                        }
+                        break;
                     }
-                    break;
+                    if s_file == 0 {
+                        break; // Reached file A, stop
+                    }
+                    s -= 9;
                 }
-                s -= 9;
             }
-            // northeast
-            let mut s = sq as i8 - 7;
-            while s >= 0 && (s % 8) != 0 {
-                if (1u64 << s) & self.occ != 0 {
-                    if (1u64 << s) & diagonal_attackers != 0 {
-                        return true;
+            // northeast (direction -7): from sq, decrease rank, increase file
+            // Stop when we reach file H (from_file == 7) or rank 1 (s < 0)
+            if sq_file < 7 {
+                // Can move northeast
+                let mut s = sq as i8 - 7;
+                while s >= 0 {
+                    let s_file = s % 8;
+                    if (1u64 << s) & self.occ != 0 {
+                        if (1u64 << s) & diagonal_attackers != 0 {
+                            return true;
+                        }
+                        break;
                     }
-                    break;
+                    if s_file == 7 {
+                        break; // Reached file H, stop
+                    }
+                    s -= 7;
                 }
-                s -= 7;
             }
-            // southwest
-            let mut s = sq as i8 + 7;
-            while s < 64 && (s % 8) != 0 {
-                if (1u64 << s) & self.occ != 0 {
-                    if (1u64 << s) & diagonal_attackers != 0 {
-                        return true;
+            // southwest (direction +7): from sq, increase rank, decrease file
+            // Stop when we reach file A (s_file == 0) or rank 8 (s >= 64)
+            if sq_file > 0 {
+                // Can move southwest
+                let mut s = sq as i8 + 7;
+                while s < 64 {
+                    let s_file = s % 8;
+                    if (1u64 << s) & self.occ != 0 {
+                        if (1u64 << s) & diagonal_attackers != 0 {
+                            return true;
+                        }
+                        break;
                     }
-                    break;
+                    if s_file == 0 {
+                        break; // Reached file A, stop
+                    }
+                    s += 7;
                 }
-                s += 7;
             }
-            // southeast
-            let mut s = sq as i8 + 9;
-            while s < 64 && (s % 8) != 7 {
-                if (1u64 << s) & self.occ != 0 {
-                    if (1u64 << s) & diagonal_attackers != 0 {
-                        return true;
+            // southeast (direction +9): from sq, increase rank, increase file
+            // Stop when we reach file H (s_file == 7) or rank 8 (s >= 64)
+            if sq_file < 7 {
+                // Can move southeast
+                let mut s = sq as i8 + 9;
+                while s < 64 {
+                    let s_file = s % 8;
+                    if (1u64 << s) & self.occ != 0 {
+                        if (1u64 << s) & diagonal_attackers != 0 {
+                            return true;
+                        }
+                        break;
                     }
-                    break;
+                    if s_file == 7 {
+                        break; // Reached file H, stop
+                    }
+                    s += 9;
                 }
-                s += 9;
             }
         }
         // Rook/Queen (orthogonal sliding)

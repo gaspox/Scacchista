@@ -53,14 +53,14 @@ impl Default for SearchParams {
             max_depth: 8,
             time_limit_ms: 5000,
             node_limit: 0,
-            aspiration_window: 50, // 0.5 pawn
-            enable_null_move_pruning: false,  // TEMP: disabled for debugging
+            aspiration_window: 50,          // 0.5 pawn
+            enable_null_move_pruning: true, // Re-enabled after perft fix
             null_move_min_depth: 2,
-            enable_lmr: false,  // TEMP: disabled for debugging
+            enable_lmr: true, // Re-enabled after null-move tested
             lmr_min_depth: 3,
             lmr_base_reduction: 2,
-            enable_futility_pruning: false,  // TEMP: disabled for debugging
-            futility_margin: 100, // 1.0 pawn
+            enable_futility_pruning: true, // Re-enabled after LMR tested
+            futility_margin: 200,          // 2.0 pawns (conservative to avoid missing tactics)
             futility_min_depth: 3,
             killer_moves_count: 2,
             qsearch_depth: 4,
