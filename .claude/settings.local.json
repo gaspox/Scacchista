@@ -40,7 +40,13 @@
       "Bash(/usr/bin/time -v sh -c 'echo -e \"\"uci\\nposition startpos\\ngo depth 6\\nquit\"\" | ./target/release/scacchista')",
       "Bash(/usr/bin/time:*)",
       "Bash(printf:*)",
-      "Bash(ldd:*)"
+      "Bash(ldd:*)",
+      "Bash({ time printf 'uci\\nposition startpos\\ngo movetime 2000\\n')",
+      "Bash({ time printf 'uci\\nposition startpos\\ngo movetime 5000\\n')",
+      "Bash({ time printf 'uci\\nposition startpos\\ngo movetime 1000\\n')",
+      "Bash(./target/release/profile_search:*)",
+      "Bash(time printf:*)",
+      "Bash(git stash:*)"
     ],
     "deny": [],
     "ask": []

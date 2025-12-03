@@ -305,6 +305,55 @@ fn development_penalty(board: &Board, color: Color) -> i16 {
 // FUNZIONE DI VALUTAZIONE PRINCIPALE
 // ============================================================================
 
+/// Fast evaluation: only material + PSQT (no king safety, development, etc.)
+/// Used in quiescence search where speed is critical
+pub fn evaluate_fast(board: &Board) -> i16 {
+    let mut white_score: i32 = 0;
+    let mut black_score: i32 = 0;
+
+    for sq in 0..64 {
+        if let Some((kind, color)) = board.piece_on(sq) {
+            let material_value = match kind {
+                PieceKind::Pawn => PAWN_VALUE,
+                PieceKind::Knight => KNIGHT_VALUE,
+                PieceKind::Bishop => BISHOP_VALUE,
+                PieceKind::Rook => ROOK_VALUE,
+                PieceKind::Queen => QUEEN_VALUE,
+                PieceKind::King => KING_VALUE,
+            };
+
+            let psqt_index = match color {
+                Color::White => sq,
+                Color::Black => sq ^ 56,
+            };
+
+            let psqt_bonus = match kind {
+                PieceKind::Pawn => PAWN_PSQT[psqt_index],
+                PieceKind::Knight => KNIGHT_PSQT[psqt_index],
+                PieceKind::Bishop => BISHOP_PSQT[psqt_index],
+                PieceKind::Rook => ROOK_PSQT[psqt_index],
+                PieceKind::Queen => QUEEN_PSQT[psqt_index],
+                PieceKind::King => KING_PSQT[psqt_index],
+            };
+
+            let total_value = material_value as i32 + psqt_bonus as i32;
+
+            match color {
+                Color::White => white_score += total_value,
+                Color::Black => black_score += total_value,
+            }
+        }
+    }
+
+    let relative_score = (white_score - black_score) as i16;
+
+    if board.side == Color::Black {
+        -relative_score
+    } else {
+        relative_score
+    }
+}
+
 /// Valuta la posizione con materiale + PSQT + penalità sviluppo
 ///
 /// Restituisce uno score dal punto di vista del **giocatore che muove** (convenzione negamax).

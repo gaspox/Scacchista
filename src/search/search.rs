@@ -439,10 +439,13 @@ impl Search {
             return self.qsearch(alpha, beta, self.params.qsearch_depth);
         }
 
+        // OPTIMIZATION: Cache is_in_check() result to avoid duplicate expensive calls
+        let parent_in_check = self.is_in_check();
+
         // Futility pruning: if evaluation + margin can't beat beta, prune
         if self.params.enable_futility_pruning
             && depth >= self.params.futility_min_depth
-            && !self.is_in_check()
+            && !parent_in_check
             && !self.is_endgame()
             && alpha < beta - 1
         // Not in PV node
@@ -460,9 +463,8 @@ impl Search {
             && !is_pv_node  // Never use null-move in PV nodes
             && depth >= self.params.null_move_min_depth
             && ply > 0  // Not at root
-            && !self.is_in_check()
+            && !parent_in_check  // Reuse cached check state
         {
-            // Not in check
 
             // Null-move reduction: typically R = 2 or 3, we'll use R = 2
             let reduction = 2;
@@ -550,8 +552,8 @@ impl Search {
         // Generate and order moves
         let mut moves = self.board.generate_moves();
         if moves.is_empty() {
-            // In checkmate or stalemate
-            if self.is_in_check() {
+            // In checkmate or stalemate - reuse parent_in_check
+            if parent_in_check {
                 return -MATE; // Checkmate, add distance-to-mate
             } else {
                 return 0; // Stalemate
@@ -585,7 +587,7 @@ impl Search {
                 (true, false) => std::cmp::Ordering::Less,
                 (false, true) => std::cmp::Ordering::Greater,
                 (true, true) => {
-                    // MVV-LVA + SEE for captures
+                    // MVV-LVA + SEE for captures (original)
                     let a_to = move_to_sq(a);
                     let b_to = move_to_sq(b);
 
@@ -763,6 +765,11 @@ impl Search {
         crate::eval::evaluate(&self.board)
     }
 
+    /// Fast static evaluation (material + PSQT only) for quiescence search
+    fn static_eval_fast(&self) -> i16 {
+        crate::eval::evaluate_fast(&self.board)
+    }
+
     /// Quiescence search - searches only noisy moves (captures, promotions, checks)
     ///
     /// Quiescence search is like continuing to investigate a crime scene only while
@@ -783,14 +790,14 @@ impl Search {
         // Check time periodically to allow early exit from deep qsearch
         if self.check_time_expired() {
             // Return stand pat as approximation when time expires
-            return self.static_eval();
+            return self.static_eval_fast();
         }
 
         // Clear SEE cache for this node position
         self.clear_see_cache();
 
-        // Stand pat: static evaluation as a lower bound
-        let stand_pat = self.static_eval();
+        // Stand pat: use fast eval (material + PSQT only) for speed
+        let stand_pat = self.static_eval_fast();
 
         // If stand pat is already good enough for beta cutoff
         if stand_pat >= beta {
@@ -1151,6 +1158,27 @@ impl Search {
             PieceKind::Queen => 900,
             PieceKind::King => 20000,
         }
+    }
+
+    /// Improved MVV-LVA score: victim_value * 10 - attacker_value
+    /// Prefers capturing valuable pieces with cheap pieces
+    fn mvv_lva_score(&self, mv: Move) -> i16 {
+        let to_sq = move_to_sq(mv);
+        let from_sq = crate::move_from_sq(mv);
+
+        let victim_value = if let Some((kind, _)) = self.board.piece_on(to_sq) {
+            self.piece_value(&kind)
+        } else {
+            0
+        };
+
+        let attacker_value = if let Some((kind, _)) = self.board.piece_on(from_sq) {
+            self.piece_value(&kind)
+        } else {
+            0
+        };
+
+        victim_value * 10 - attacker_value
     }
 
     /// Store a killer move at the given ply
