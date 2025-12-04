@@ -143,12 +143,27 @@ impl UciEngine {
                 } else {
                     // SYNC MODE: go depth/movetime - traditional blocking search
                     // Build search params
-                    // If depth is specified, use it; otherwise use a high depth (99)
-                    // and let time management control the search duration
-                    let max_search_depth = depth.unwrap_or(99);
+
+                    // UCI semantics: depth is always a maximum depth limit.
+                    // Time limits (wtime/btime/movetime) are additional constraints.
+                    // When only depth is specified, search runs until depth is reached.
+                    let max_search_depth = depth.map(|d| d.clamp(1, 99)).unwrap_or(99);
+
+                    // If depth is specified WITHOUT time limits, use unlimited time
+                    // (depth will control the search). Otherwise, use time allocation.
+                    let effective_time = if depth.is_some()
+                        && movetime.is_none()
+                        && wtime.is_none()
+                        && btime.is_none()
+                    {
+                        0  // 0 = no time limit, depth controls search
+                    } else {
+                        time_alloc
+                    };
+
                     let params = crate::search::SearchParams::new()
                         .max_depth(max_search_depth)
-                        .time_limit(time_alloc);
+                        .time_limit(effective_time);
 
                     // Submit job to persistent thread manager
                     if let Some(tm) = &self.thread_mgr {
