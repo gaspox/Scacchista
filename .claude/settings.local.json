@@ -46,7 +46,9 @@
       "Bash({ time printf 'uci\\nposition startpos\\ngo movetime 1000\\n')",
       "Bash(./target/release/profile_search:*)",
       "Bash(time printf:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(time cargo run:*)",
+      "Bash({ echo \"uci\")"
     ],
     "deny": [],
     "ask": []
