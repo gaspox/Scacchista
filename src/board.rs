@@ -1574,6 +1574,51 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_zobrist_invariant_after_null_move() {
+        // Test that zobrist hash is correctly restored after null-move + unmake
+        // This validates the optimization in search.rs that uses self.board.zobrist
+        // instead of recalc_zobrist() after null-move pruning
+        crate::init();
+        let mut board = Board::new();
+        board.set_from_fen(START_FEN).unwrap();
+
+        // Store original zobrist
+        let original_zobrist = board.zobrist;
+        let original_recalc = board.recalc_zobrist();
+
+        // Verify incremental zobrist matches recalculated
+        assert_eq!(
+            original_zobrist, original_recalc,
+            "Initial incremental zobrist should match recalculated"
+        );
+
+        // Make null move
+        let undo = board.make_null_move();
+
+        // Zobrist should be different after null move (side changed)
+        assert_ne!(
+            board.zobrist, original_zobrist,
+            "Zobrist should change after null move"
+        );
+
+        // Unmake null move
+        board.unmake_null_move(undo);
+
+        // Zobrist should be restored to original
+        assert_eq!(
+            board.zobrist, original_zobrist,
+            "Zobrist not correctly restored after unmake_null_move"
+        );
+
+        // Critical: incremental zobrist should match recalculated
+        assert_eq!(
+            board.zobrist,
+            board.recalc_zobrist(),
+            "Incremental zobrist diverged from recalculated after null-move cycle"
+        );
+    }
 }
 
 // FEN parsing/setter su Board

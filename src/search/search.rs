@@ -562,7 +562,15 @@ impl Search {
 
         // Move ordering with TT, captures, killers, and history
         let mut tt_move = None;
-        let key = self.board.recalc_zobrist();
+        // Use incremental zobrist hash instead of recalculating
+        // After null-move + unmake, zobrist should be identical to original
+        // Validate in debug mode that incremental hashing is correct
+        debug_assert_eq!(
+            self.board.zobrist,
+            self.board.recalc_zobrist(),
+            "Incremental zobrist hash diverged from recalculated hash"
+        );
+        let key = self.board.zobrist;
         if let Some(entry) = self.tt.probe(key) {
             if entry.best_move != 0 {
                 tt_move = Some(entry.best_move);
