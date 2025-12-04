@@ -305,6 +305,81 @@ fn development_penalty(board: &Board, color: Color) -> i16 {
 // FUNZIONE DI VALUTAZIONE PRINCIPALE
 // ============================================================================
 
+/// Quick material count only (no PSQT, no positional evaluation)
+///
+/// This is the fastest possible evaluation, counting only piece values
+/// without considering position. Used as a threshold check in lazy evaluation.
+///
+/// # Arguments
+/// * `board` - The position to evaluate
+///
+/// # Returns
+/// Material balance in centipawns from the side-to-move perspective
+fn quick_material_count(board: &Board) -> i16 {
+    let mut white_material: i32 = 0;
+    let mut black_material: i32 = 0;
+
+    for sq in 0..64 {
+        if let Some((kind, color)) = board.piece_on(sq) {
+            let value = match kind {
+                PieceKind::Pawn => PAWN_VALUE,
+                PieceKind::Knight => KNIGHT_VALUE,
+                PieceKind::Bishop => BISHOP_VALUE,
+                PieceKind::Rook => ROOK_VALUE,
+                PieceKind::Queen => QUEEN_VALUE,
+                PieceKind::King => KING_VALUE,
+            };
+
+            match color {
+                Color::White => white_material += value as i32,
+                Color::Black => black_material += value as i32,
+            }
+        }
+    }
+
+    let relative = (white_material - black_material) as i16;
+    if board.side == Color::Black {
+        -relative
+    } else {
+        relative
+    }
+}
+
+/// Lazy evaluation: fast material check with threshold, fallback to full eval
+///
+/// This is a "quick win" optimization that skips expensive positional evaluation
+/// (king safety, development, center control) in clearly unbalanced positions.
+///
+/// Strategy:
+/// 1. Quick material-only count (no PSQT lookup)
+/// 2. If |material| > threshold (3 pawns), position is clearly won/lost → return material
+/// 3. Otherwise, position is balanced → do full evaluation
+///
+/// # Arguments
+/// * `board` - The position to evaluate
+///
+/// # Returns
+/// Score in centipawns from the side-to-move perspective
+///
+/// # Performance
+/// Expected ~10-20% speedup in tactical positions with material imbalances.
+/// No slowdown in balanced positions (single extra material count is cheap).
+pub fn evaluate_lazy(board: &Board) -> i16 {
+    // Quick material-only evaluation
+    let material = quick_material_count(board);
+
+    // If position is clearly unbalanced (> 3 pawns advantage), skip expensive eval
+    // Rationale: In such positions, king safety and development matter less than raw material
+    const LAZY_THRESHOLD: i16 = 300; // 3 pawns (adjustable based on benchmarks)
+
+    if material.abs() > LAZY_THRESHOLD {
+        return material;
+    }
+
+    // Otherwise do full evaluation (material + PSQT + king safety + development + center)
+    evaluate(board)
+}
+
 /// Fast evaluation: only material + PSQT (no king safety, development, etc.)
 /// Used in quiescence search where speed is critical
 pub fn evaluate_fast(board: &Board) -> i16 {

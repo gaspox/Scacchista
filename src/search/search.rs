@@ -769,7 +769,7 @@ impl Search {
 
     /// Static evaluation with PSQT (piece-square tables)
     fn static_eval(&self) -> i16 {
-        // Use full evaluation with material + PSQT
+        // Use full evaluation with material + PSQT + king safety + development + center
         crate::eval::evaluate(&self.board)
     }
 
