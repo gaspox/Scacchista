@@ -48,7 +48,12 @@
       "Bash(time printf:*)",
       "Bash(git stash:*)",
       "Bash(time cargo run:*)",
-      "Bash({ echo \"uci\")"
+      "Bash({ echo \"uci\")",
+      "Bash({ time printf 'uci\\nposition startpos\\ngo depth 6\\nquit\\n')",
+      "Bash(for i in 1 2 3)",
+      "Bash(do echo \"=== RUN $i ===\")",
+      "Bash(done)",
+      "Bash(do echo \"Run $i:\")"
     ],
     "deny": [],
     "ask": []
