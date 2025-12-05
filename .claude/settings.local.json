@@ -19,7 +19,8 @@
       "Bash(./target/release/perft:*)",
       "Bash(./target/release/perft --depth 4)",
       "Bash(./target/release/stress_search_test:*)",
-      "Bash(./target/release/simple_search_test:*)"
+      "Bash(./target/release/simple_search_test:*)",
+      "Bash(git merge:*)"
     ],
     "deny": [],
     "ask": []
