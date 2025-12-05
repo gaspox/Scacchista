@@ -48,3 +48,28 @@ fn perft_regression_starting_pos() {
         );
     }
 }
+
+#[test]
+fn perft_regression_kiwipete() {
+    scacchista::init();
+
+    const KIWIPETE: &str = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
+
+    // prepare shakmaty pos
+    use shakmaty::fen::Fen;
+    let fen: Fen = KIWIPETE.parse().unwrap();
+    let pos: Chess = fen.into_position(shakmaty::CastlingMode::Standard).unwrap();
+
+    let mut board = Board::new();
+    board.set_from_fen(KIWIPETE).expect("set_from_fen");
+
+    for depth in 1..=3u8 {
+        let expected = perft_shakmaty(&pos, depth);
+        let got = perft_scacchista(&mut board, depth);
+        assert_eq!(
+            got, expected,
+            "Kiwipete perft mismatch at depth {}: got {} expected {}",
+            depth, got, expected
+        );
+    }
+}

@@ -5,6 +5,9 @@ CLAUDE.md
 p1.pdf
 p1.txt
 
+# Benchmark engines
+slow64_linux
+
 # Rust build artifacts
 /target
 Cargo.lock

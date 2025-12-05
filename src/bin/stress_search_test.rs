@@ -2,7 +2,7 @@
 //!
 //! Tests deeper searches and more complex positions
 
-use scacchista::search::{Search, SearchParams};
+use scacchista::search::Search;
 use scacchista::{init, Board};
 
 fn main() {
