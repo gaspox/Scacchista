@@ -44,7 +44,7 @@ impl UciEngine {
         match cmd {
             UciCommand::Uci => {
                 res.push("id name Scacchista".to_string());
-                res.push("id author Claude Code".to_string());
+                res.push("id author Gaspox (AI co-author: Claude Code)".to_string());
 
                 // Send UCI options
                 res.push("option name Hash type spin default 16 min 1 max 4096".to_string());
