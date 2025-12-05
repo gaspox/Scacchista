@@ -443,41 +443,53 @@ pub fn evaluate(board: &Board) -> i16 {
     let mut white_score: i32 = 0;
     let mut black_score: i32 = 0;
 
-    // Itera su tutti i 64 quadrati
-    for sq in 0..64 {
-        if let Some((kind, color)) = board.piece_on(sq) {
-            // Calcola il valore totale: materiale + PSQT bonus
-            let material_value = match kind {
-                PieceKind::Pawn => PAWN_VALUE,
-                PieceKind::Knight => KNIGHT_VALUE,
-                PieceKind::Bishop => BISHOP_VALUE,
-                PieceKind::Rook => ROOK_VALUE,
-                PieceKind::Queen => QUEEN_VALUE,
-                PieceKind::King => KING_VALUE,
-            };
+    // Iterate directly on bitboards (much faster than piece_on() for each square)
+    // This reduces 64*12 checks to ~30-40 actual piece lookups
+    let piece_kinds = [
+        PieceKind::Pawn,
+        PieceKind::Knight,
+        PieceKind::Bishop,
+        PieceKind::Rook,
+        PieceKind::Queen,
+        PieceKind::King,
+    ];
 
-            // PSQT bonus: per il Bianco usiamo l'indice diretto,
-            // per il Nero specchiamo verticalmente (flip_sq = sq XOR 56)
-            let psqt_index = match color {
-                Color::White => sq,
-                Color::Black => sq ^ 56, // Flip verticale
-            };
+    for &kind in &piece_kinds {
+        let material_value = match kind {
+            PieceKind::Pawn => PAWN_VALUE,
+            PieceKind::Knight => KNIGHT_VALUE,
+            PieceKind::Bishop => BISHOP_VALUE,
+            PieceKind::Rook => ROOK_VALUE,
+            PieceKind::Queen => QUEEN_VALUE,
+            PieceKind::King => KING_VALUE,
+        };
 
-            let psqt_bonus = match kind {
-                PieceKind::Pawn => PAWN_PSQT[psqt_index],
-                PieceKind::Knight => KNIGHT_PSQT[psqt_index],
-                PieceKind::Bishop => BISHOP_PSQT[psqt_index],
-                PieceKind::Rook => ROOK_PSQT[psqt_index],
-                PieceKind::Queen => QUEEN_PSQT[psqt_index],
-                PieceKind::King => KING_PSQT[psqt_index],
-            };
+        let psqt_table = match kind {
+            PieceKind::Pawn => &PAWN_PSQT,
+            PieceKind::Knight => &KNIGHT_PSQT,
+            PieceKind::Bishop => &BISHOP_PSQT,
+            PieceKind::Rook => &ROOK_PSQT,
+            PieceKind::Queen => &QUEEN_PSQT,
+            PieceKind::King => &KING_PSQT,
+        };
 
-            let total_value = material_value as i32 + psqt_bonus as i32;
+        // White pieces
+        let mut white_bb = board.piece_bb(kind, Color::White);
+        while white_bb != 0 {
+            let sq = white_bb.trailing_zeros() as usize;
+            white_bb &= white_bb - 1; // Clear LSB
+            let psqt_bonus = psqt_table[sq];
+            white_score += material_value as i32 + psqt_bonus as i32;
+        }
 
-            match color {
-                Color::White => white_score += total_value,
-                Color::Black => black_score += total_value,
-            }
+        // Black pieces (flip vertically for PSQT index)
+        let mut black_bb = board.piece_bb(kind, Color::Black);
+        while black_bb != 0 {
+            let sq = black_bb.trailing_zeros() as usize;
+            black_bb &= black_bb - 1; // Clear LSB
+            let psqt_index = sq ^ 56; // Flip verticale
+            let psqt_bonus = psqt_table[psqt_index];
+            black_score += material_value as i32 + psqt_bonus as i32;
         }
     }
 
