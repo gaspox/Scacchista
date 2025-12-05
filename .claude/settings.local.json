@@ -54,7 +54,8 @@
       "Bash(for i in 1 2 3)",
       "Bash(do echo \"=== RUN $i ===\")",
       "Bash(done)",
-      "Bash(do echo \"Run $i:\")"
+      "Bash(do echo \"Run $i:\")",
+      "Bash(git pull:*)"
     ],
     "deny": [],
     "ask": []
