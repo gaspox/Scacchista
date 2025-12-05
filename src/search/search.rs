@@ -13,7 +13,7 @@ use crate::{move_captured, move_flag, move_piece, move_to_sq};
 use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 
 /// Search engine configurations
@@ -41,8 +41,8 @@ pub struct Search {
     /// The current board position (mutable during search)
     board: Board,
 
-    /// Transposition table for caching
-    tt: TranspositionTable,
+    /// Transposition table for caching (shared across threads via Arc<Mutex>)
+    tt: Arc<Mutex<TranspositionTable>>,
 
     /// Search parameters
     params: SearchParams,
@@ -89,7 +89,7 @@ impl Search {
         let max_ply = params.max_depth as usize + 1; // +1 for array indexing
         Self {
             board,
-            tt: TranspositionTable::new(tt_size_mb),
+            tt: Arc::new(Mutex::new(TranspositionTable::new(tt_size_mb))),
             params,
             stats: SearchStats::new(),
             time_mgmt: TimeManagement::new(),
@@ -146,6 +146,13 @@ impl Search {
         self
     }
 
+    /// Use a shared transposition table (for multi-threaded search)
+    /// This allows multiple search instances to share the same TT
+    pub fn with_shared_tt(mut self, tt: Arc<Mutex<TranspositionTable>>) -> Self {
+        self.tt = tt;
+        self
+    }
+
     /// Create search with reasonable defaults
     pub fn with_board(board: Board) -> Self {
         let params = SearchParams::new().max_depth(8).time_limit(5000);
@@ -184,7 +191,7 @@ impl Search {
 
         self.stats.reset();
         self.stats.start_timing();
-        self.tt.new_search();
+        self.tt.lock().unwrap().new_search();
 
         // Reset time management state for new search
         self.time_expired = false;
@@ -271,7 +278,7 @@ impl Search {
 
         self.stats.reset();
         self.stats.start_timing();
-        self.tt.new_search();
+        self.tt.lock().unwrap().new_search();
 
         // Reset time management state for new search
         self.time_expired = false;
@@ -348,7 +355,7 @@ impl Search {
             // record a node and TT entry so stats/tests consider this position handled
             self.stats.inc_node();
             let key = self.board.recalc_zobrist();
-            self.tt.store(key, sc, depth, NodeType::Exact, 0);
+            self.tt.lock().unwrap().store(key, sc, depth, NodeType::Exact, 0);
             self.stats.inc_tt_entry();
             return (0, sc);
         }
@@ -390,6 +397,8 @@ impl Search {
         // Store in transposition table
         let key = self.board.recalc_zobrist();
         self.tt
+            .lock()
+            .unwrap()
             .store(key, best_score, depth, NodeType::Exact, best_root_move);
         self.stats.inc_tt_entry();
         // Store recorded in stats above.
@@ -418,7 +427,7 @@ impl Search {
         // FIX: Use i32 to avoid overflow when computing window size
         // (beta - alpha can overflow i16 when beta=30000, alpha=-30000)
         let is_pv_node = (beta as i32) - (alpha as i32) > 1; // PV node has open window
-        if let Some(entry) = self.tt.probe(key) {
+        if let Some(entry) = self.tt.lock().unwrap().probe(key).copied() {
             self.stats.inc_tt_hit();
             // In PV nodes, only use TT for move ordering, not for cutoffs
             // This prevents score instability from aspiration window re-searches
@@ -571,7 +580,7 @@ impl Search {
             "Incremental zobrist hash diverged from recalculated hash"
         );
         let key = self.board.zobrist;
-        if let Some(entry) = self.tt.probe(key) {
+        if let Some(entry) = self.tt.lock().unwrap().probe(key).copied() {
             if entry.best_move != 0 {
                 tt_move = Some(entry.best_move);
             }
@@ -762,7 +771,7 @@ impl Search {
             NodeType::Exact
         };
 
-        self.tt.store(key, best, depth, node_type, best_move);
+        self.tt.lock().unwrap().store(key, best, depth, node_type, best_move);
 
         best
     }
@@ -1075,7 +1084,7 @@ impl Search {
         // Try TT move first if available
         let key = self.board.recalc_zobrist();
         let mut tt_move = None;
-        if let Some(entry) = self.tt.probe(key) {
+        if let Some(entry) = self.tt.lock().unwrap().probe(key).copied() {
             if entry.best_move != 0 {
                 tt_move = Some(entry.best_move);
                 self.stats.inc_tt_hit();
@@ -1647,7 +1656,7 @@ impl Search {
     /// Get statistics summary for debugging
     pub fn print_stats(&self) {
         self.stats.print_summary();
-        println!("TT Fill: {:.1}%", self.tt.fill_percentage());
+        println!("TT Fill: {:.1}%", self.tt.lock().unwrap().fill_percentage());
     }
 }
 

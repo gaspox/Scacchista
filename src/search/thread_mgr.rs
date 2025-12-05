@@ -50,7 +50,7 @@ impl ThreadManager {
         let mut workers = Vec::new();
         for _ in 0..num_threads {
             let stop_clone = stop_flag.clone();
-            let _tt_clone = tt.clone();
+            let tt_clone = tt.clone();
             let rx_clone = rx.clone();
             let handle = thread::spawn(move || {
                 loop {
@@ -72,9 +72,10 @@ impl ThreadManager {
                             let job_stop = job_wrapped.stop_flag.clone();
                             let max_depth = params.max_depth;
 
-                            // Create search with stop flag attached
-                            let mut search =
-                                Search::new(board, 16, params).with_stop_flag(job_stop);
+                            // Create search with shared TT and stop flag attached
+                            let mut search = Search::new(board, 16, params)
+                                .with_shared_tt(tt_clone.clone())
+                                .with_stop_flag(job_stop);
 
                             let (mv, score) = search.search(Some(max_depth));
                             // Send result back (ignore send errors)
