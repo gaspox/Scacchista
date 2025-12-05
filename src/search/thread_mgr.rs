@@ -1,92 +1,109 @@
 //! Threaded search manager (lazy-SMP) for Scacchista
 //!
-//! Responsibilities:
-//! - Spawn worker threads honoring Threads option
-//! - Provide start/stop/job submission API
-//! - Share transposition table and stop flag via Arc<Mutex/Atomic>
+//! True lazy-SMP implementation: all workers search the same position in parallel,
+//! sharing a global transposition table. Workers naturally explore different parts
+//! of the search tree due to timing differences in TT hits/misses.
 
 use crate::board::Board;
 use crate::search::tt::TranspositionTable;
 use crate::search::{Search, SearchParams};
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    mpsc::{self, Receiver, Sender, TryRecvError},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc, Mutex,
 };
 use std::thread;
 use std::time::Duration;
 
-/// Job submitted to worker, includes a response channel to send back result
+/// Job to broadcast to all workers
+#[derive(Clone)]
 pub struct SearchJob {
     pub board: Board,
     pub params: SearchParams,
 }
 
-struct JobWithResp {
-    job: SearchJob,
-    resp: Sender<(crate::board::Move, i16)>,
-    stop_flag: Arc<AtomicBool>,
-}
-
-/// Thread manager implementing a simple job queue consumed by workers
+/// Thread manager implementing true lazy-SMP parallel search
 pub struct ThreadManager {
     workers: Vec<thread::JoinHandle<()>>,
+    num_threads: usize,
     stop_flag: Arc<AtomicBool>,
-    sender: Sender<JobWithResp>,
     tt: Arc<Mutex<TranspositionTable>>,
-    /// Current job stop flag (set when a job is active). Guarded by mutex.
-    current_job_stop: Arc<Mutex<Option<Arc<AtomicBool>>>>,
-    /// Async result receiver for go infinite mode (stored for retrieval after stop)
-    async_result_rx: Arc<Mutex<Option<Receiver<(crate::board::Move, i16)>>>>,
+    /// Current job broadcasted to all workers (None = idle)
+    current_job: Arc<Mutex<Option<SearchJob>>>,
+    /// Signal that a new job is available
+    job_available: Arc<AtomicBool>,
+    /// Stop flag for current search job
+    job_stop_flag: Arc<AtomicBool>,
+    /// Results from each worker [worker_id] -> (move, score)
+    results: Arc<Mutex<Vec<Option<(crate::board::Move, i16)>>>>,
+    /// Counter for workers that have completed current job
+    workers_done: Arc<AtomicUsize>,
 }
 
 impl ThreadManager {
     pub fn new(num_threads: usize, tt_mb: usize) -> Self {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let tt = Arc::new(Mutex::new(TranspositionTable::new(tt_mb)));
-        let (tx, rx): (Sender<JobWithResp>, Receiver<JobWithResp>) = mpsc::channel();
-        let rx = Arc::new(Mutex::new(rx));
+        let current_job = Arc::new(Mutex::new(None));
+        let job_available = Arc::new(AtomicBool::new(false));
+        let job_stop_flag = Arc::new(AtomicBool::new(false));
+        let results = Arc::new(Mutex::new(vec![None; num_threads]));
+        let workers_done = Arc::new(AtomicUsize::new(0));
 
         let mut workers = Vec::new();
-        for _ in 0..num_threads {
+        for worker_id in 0..num_threads {
             let stop_clone = stop_flag.clone();
             let tt_clone = tt.clone();
-            let rx_clone = rx.clone();
+            let job_clone = current_job.clone();
+            let job_avail_clone = job_available.clone();
+            let job_stop_clone = job_stop_flag.clone();
+            let results_clone = results.clone();
+            let workers_done_clone = workers_done.clone();
+
             let handle = thread::spawn(move || {
                 loop {
+                    // Check global stop flag
                     if stop_clone.load(Ordering::Relaxed) {
                         break;
                     }
-                    // Non-blocking receive with brief sleep for low latency stop response
-                    let rx_guard = match rx_clone.lock() {
-                        Ok(g) => g,
-                        Err(poisoned) => {
-                            eprintln!("WARN: Worker receiver mutex poisoned, recovering");
-                            poisoned.into_inner()
-                        }
+
+                    // Wait for job to become available
+                    if !job_avail_clone.load(Ordering::Acquire) {
+                        thread::sleep(Duration::from_millis(10));
+                        continue;
+                    }
+
+                    // Get current job (if any)
+                    let job = {
+                        let guard = job_clone.lock().unwrap();
+                        guard.clone()
                     };
-                    match rx_guard.try_recv() {
-                        Ok(job_wrapped) => {
-                            // When a job starts, use its stop flag to cooperatively stop search
-                            let SearchJob { board, params } = job_wrapped.job;
-                            let job_stop = job_wrapped.stop_flag.clone();
-                            let max_depth = params.max_depth;
 
-                            // Create search with shared TT and stop flag attached
-                            let mut search = Search::new(board, 16, params)
-                                .with_shared_tt(tt_clone.clone())
-                                .with_stop_flag(job_stop);
+                    if let Some(SearchJob { board, params }) = job {
+                        let max_depth = params.max_depth;
 
-                            let (mv, score) = search.search(Some(max_depth));
-                            // Send result back (ignore send errors)
-                            let _ = job_wrapped.resp.send((mv, score));
+                        // Create search with shared TT and job stop flag
+                        let mut search = Search::new(board, 16, params)
+                            .with_shared_tt(tt_clone.clone())
+                            .with_stop_flag(job_stop_clone.clone());
+
+                        // Execute search
+                        let (mv, score) = search.search(Some(max_depth));
+
+                        // Store result
+                        {
+                            let mut results_guard = results_clone.lock().unwrap();
+                            results_guard[worker_id] = Some((mv, score));
                         }
-                        Err(TryRecvError::Empty) => {
-                            // No job available, sleep briefly and recheck (10ms for ~20-50ms latency)
-                            std::thread::sleep(Duration::from_millis(10));
-                            continue;
+
+                        // Signal completion
+                        workers_done_clone.fetch_add(1, Ordering::Release);
+
+                        // Wait for job to be cleared
+                        while job_avail_clone.load(Ordering::Acquire)
+                            && !stop_clone.load(Ordering::Relaxed)
+                        {
+                            thread::sleep(Duration::from_millis(10));
                         }
-                        Err(TryRecvError::Disconnected) => break,
                     }
                 }
             });
@@ -95,73 +112,77 @@ impl ThreadManager {
 
         ThreadManager {
             workers,
+            num_threads,
             stop_flag,
-            sender: tx,
             tt,
-            current_job_stop: Arc::new(Mutex::new(None)),
-            async_result_rx: Arc::new(Mutex::new(None)),
+            current_job,
+            job_available,
+            job_stop_flag,
+            results,
+            workers_done,
         }
     }
 
     /// Submit a job and wait for result (synchronous from caller perspective)
+    /// Broadcasts job to all workers and waits for first completion (or best result)
     pub fn submit_job(&self, job: SearchJob) -> (crate::board::Move, i16) {
-        let (resp_tx, resp_rx) = mpsc::channel();
-        let job_stop = Arc::new(AtomicBool::new(false));
-        let wrapped = JobWithResp {
-            job,
-            resp: resp_tx,
-            stop_flag: job_stop.clone(),
-        };
-        // Record current job stop flag
+        // Reset state for new job
+        self.workers_done.store(0, Ordering::Release);
+        self.job_stop_flag.store(false, Ordering::Release);
         {
-            let mut guard = match self.current_job_stop.lock() {
-                Ok(g) => g,
-                Err(poisoned) => {
-                    eprintln!("WARN: current_job_stop mutex poisoned (submit_job), recovering");
-                    poisoned.into_inner()
-                }
-            };
-            *guard = Some(job_stop.clone());
+            let mut results_guard = self.results.lock().unwrap();
+            for r in results_guard.iter_mut() {
+                *r = None;
+            }
         }
-        // Send job (ignore send error)
-        let _ = self.sender.send(wrapped);
 
-        // Wait for result with generous timeout (10 minutes for deep searches)
-        // The stop mechanism should handle cancellation before timeout
-        match resp_rx.recv_timeout(Duration::from_secs(600)) {
-            Ok(res) => {
-                // Clear current job stop
-                let mut guard = match self.current_job_stop.lock() {
-                    Ok(g) => g,
-                    Err(poisoned) => {
-                        eprintln!("WARN: current_job_stop mutex poisoned (clear), recovering");
-                        poisoned.into_inner()
-                    }
-                };
-                *guard = None;
-                res
-            }
-            Err(_) => {
-                // Timeout or disconnected after 10 minutes - something went wrong
-                // Return 0000 (null move) to signal error
-                let mut guard = match self.current_job_stop.lock() {
-                    Ok(g) => g,
-                    Err(poisoned) => {
-                        eprintln!("WARN: current_job_stop mutex poisoned (timeout), recovering");
-                        poisoned.into_inner()
-                    }
-                };
-                *guard = None;
-                (0, -30000)
-            }
+        // Set current job (broadcast to all workers)
+        {
+            let mut job_guard = self.current_job.lock().unwrap();
+            *job_guard = Some(job);
         }
+
+        // Signal job available (all workers will start searching)
+        self.job_available.store(true, Ordering::Release);
+
+        // Wait for at least one worker to complete (or timeout after 10 minutes)
+        let start = std::time::Instant::now();
+        let timeout = Duration::from_secs(600);
+
+        while self.workers_done.load(Ordering::Acquire) == 0 {
+            if start.elapsed() > timeout {
+                // Timeout - stop all workers and return error
+                self.job_stop_flag.store(true, Ordering::Release);
+                self.job_available.store(false, Ordering::Release);
+                return (0, -30000);
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        // Collect results from workers (take best score)
+        let best_result = {
+            let results_guard = self.results.lock().unwrap();
+            results_guard
+                .iter()
+                .filter_map(|r| *r)
+                .max_by_key(|(_mv, score)| *score)
+                .unwrap_or((0, -30000))
+        };
+
+        // Clear job (stop workers)
+        self.job_available.store(false, Ordering::Release);
+        {
+            let mut job_guard = self.current_job.lock().unwrap();
+            *job_guard = None;
+        }
+
+        best_result
     }
 
     /// Signal workers to stop and join
     pub fn stop(self) {
         self.stop_flag.store(true, Ordering::Relaxed);
-        // Dropping sender will cause workers recv to return Disconnected
-        drop(self.sender);
+        self.job_available.store(false, Ordering::Relaxed);
         for w in self.workers {
             let _ = w.join();
         }
@@ -169,97 +190,66 @@ impl ThreadManager {
 
     /// Signal the currently running job (if any) to stop
     pub fn stop_current_job(&self) {
-        let guard = match self.current_job_stop.lock() {
-            Ok(g) => g,
-            Err(poisoned) => {
-                eprintln!("WARN: current_job_stop mutex poisoned (stop_current_job), recovering");
-                poisoned.into_inner()
-            }
-        };
-        if let Some(job_stop) = &*guard {
-            job_stop.store(true, Ordering::Relaxed);
-        }
+        self.job_stop_flag.store(true, Ordering::Relaxed);
     }
 
-    /// Start an async search (non-blocking). Returns the job stop flag for manual control.
-    /// Used for "go infinite" mode. Caller must later call wait_async_result() to retrieve result.
+    /// Start an async search (non-blocking). Used for "go infinite" mode.
+    /// Starts all workers searching and returns immediately.
     pub fn start_async_search(&self, job: SearchJob) -> Arc<AtomicBool> {
-        let (resp_tx, resp_rx) = mpsc::channel();
-        let job_stop = Arc::new(AtomicBool::new(false));
-
-        let wrapped = JobWithResp {
-            job,
-            resp: resp_tx,
-            stop_flag: job_stop.clone(),
-        };
-
-        // Store the result receiver for later retrieval
+        // Reset state for new job
+        self.workers_done.store(0, Ordering::Release);
+        self.job_stop_flag.store(false, Ordering::Release);
         {
-            let mut guard = match self.async_result_rx.lock() {
-                Ok(g) => g,
-                Err(poisoned) => {
-                    eprintln!(
-                        "WARN: async_result_rx mutex poisoned (start_async_search), recovering"
-                    );
-                    poisoned.into_inner()
-                }
-            };
-            *guard = Some(resp_rx);
+            let mut results_guard = self.results.lock().unwrap();
+            for r in results_guard.iter_mut() {
+                *r = None;
+            }
         }
 
-        // Record current job stop flag
+        // Set current job (broadcast to all workers)
         {
-            let mut guard = match self.current_job_stop.lock() {
-                Ok(g) => g,
-                Err(poisoned) => {
-                    eprintln!(
-                        "WARN: current_job_stop mutex poisoned (start_async_search), recovering"
-                    );
-                    poisoned.into_inner()
-                }
-            };
-            *guard = Some(job_stop.clone());
+            let mut job_guard = self.current_job.lock().unwrap();
+            *job_guard = Some(job);
         }
 
-        // Send job to worker (non-blocking from caller perspective)
-        let _ = self.sender.send(wrapped);
+        // Signal job available (all workers will start searching)
+        self.job_available.store(true, Ordering::Release);
 
-        job_stop
+        // Return job stop flag for caller to stop search when needed
+        self.job_stop_flag.clone()
     }
 
     /// Wait for async search result with timeout (blocking call).
     /// Returns None if timeout expires or no async search is active.
     pub fn wait_async_result(&self, timeout_ms: u64) -> Option<(crate::board::Move, i16)> {
-        // Take the receiver (only one retrieval allowed)
-        let rx = {
-            let mut guard = match self.async_result_rx.lock() {
-                Ok(g) => g,
-                Err(poisoned) => {
-                    eprintln!(
-                        "WARN: async_result_rx mutex poisoned (wait_async_result), recovering"
-                    );
-                    poisoned.into_inner()
-                }
-            };
-            guard.take()
-        }?;
+        // Wait for at least one worker to complete
+        let start = std::time::Instant::now();
+        let timeout = Duration::from_millis(timeout_ms);
 
-        // Wait for result with timeout
-        let result = rx.recv_timeout(Duration::from_millis(timeout_ms)).ok();
-
-        // Clear current job stop flag after result is received
-        if result.is_some() {
-            let mut guard = match self.current_job_stop.lock() {
-                Ok(g) => g,
-                Err(poisoned) => {
-                    eprintln!("WARN: current_job_stop mutex poisoned (wait_async_result clear), recovering");
-                    poisoned.into_inner()
-                }
-            };
-            *guard = None;
+        while self.workers_done.load(Ordering::Acquire) == 0 {
+            if start.elapsed() > timeout {
+                return None;
+            }
+            thread::sleep(Duration::from_millis(10));
         }
 
-        result
+        // Collect best result
+        let best_result = {
+            let results_guard = self.results.lock().unwrap();
+            results_guard
+                .iter()
+                .filter_map(|r| *r)
+                .max_by_key(|(_mv, score)| *score)
+        };
+
+        // Clear job
+        self.job_available.store(false, Ordering::Release);
+        {
+            let mut job_guard = self.current_job.lock().unwrap();
+            *job_guard = None;
+        }
+
+        best_result
     }
 }
 
