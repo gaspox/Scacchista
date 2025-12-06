@@ -176,11 +176,12 @@ impl UciEngine {
                             params,
                         };
                         let search_start = Instant::now();
-                        let (mv, score) = tm.submit_job(job);
+                        // FIX Bug #3: submit_job now returns (mv, score, completed_depth)
+                        let (mv, score, completed_depth) = tm.submit_job(job);
                         let search_time_ms = search_start.elapsed().as_millis() as u64;
                         res.push(format!(
                             "info depth {} score cp {} time {}",
-                            depth.unwrap_or(3),
+                            completed_depth,  // FIX Bug #3: Use actual completed depth
                             score,
                             search_time_ms
                         ));
@@ -209,8 +210,9 @@ impl UciEngine {
                         tm.stop_current_job();
 
                         // Wait for result with timeout (500ms should be enough for graceful stop)
-                        if let Some((mv, score)) = tm.wait_async_result(500) {
-                            res.push(format!("info score cp {}", score));
+                        // FIX Bug #3: wait_async_result now returns (mv, score, completed_depth)
+                        if let Some((mv, score, completed_depth)) = tm.wait_async_result(500) {
+                            res.push(format!("info depth {} score cp {}", completed_depth, score));
                             res.push(format!("bestmove {}", move_to_uci(mv)));
                         } else {
                             // Timeout: search didn't complete in time, return null move

@@ -261,6 +261,9 @@ impl Search {
                 best_score = score;
             }
 
+            // FIX Bug #3: Track last completed depth
+            self.stats.completed_depth = depth;
+
             // If we found mate, we can stop searching for deeper mates
             if best_score >= MATE {
                 break;
@@ -331,6 +334,9 @@ impl Search {
                 best_move = mv;
                 best_score = score;
             }
+
+            // FIX Bug #3: Track last completed depth
+            self.stats.completed_depth = depth;
         }
 
         self.params.time_limit_ms = orig_time_limit;

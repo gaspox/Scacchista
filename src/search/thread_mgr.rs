@@ -33,8 +33,9 @@ pub struct ThreadManager {
     job_available: Arc<AtomicBool>,
     /// Stop flag for current search job
     job_stop_flag: Arc<AtomicBool>,
-    /// Results from each worker [worker_id] -> (move, score)
-    results: Arc<Mutex<Vec<Option<(crate::board::Move, i16)>>>>,
+    /// Results from each worker [worker_id] -> (move, score, completed_depth)
+    /// FIX Bug #3: Include completed_depth in results
+    results: Arc<Mutex<Vec<Option<(crate::board::Move, i16, u8)>>>>,
     /// Counter for workers that have completed current job
     workers_done: Arc<AtomicUsize>,
 }
@@ -89,10 +90,11 @@ impl ThreadManager {
                         // Execute search
                         let (mv, score) = search.search(Some(max_depth));
 
-                        // Store result
+                        // FIX Bug #3: Store result including completed depth
                         {
                             let mut results_guard = results_clone.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-                            results_guard[worker_id] = Some((mv, score));
+                            let completed_depth = search.stats().completed_depth;
+                            results_guard[worker_id] = Some((mv, score, completed_depth));
                         }
 
                         // Signal completion
@@ -125,7 +127,8 @@ impl ThreadManager {
 
     /// Submit a job and wait for result (synchronous from caller perspective)
     /// Broadcasts job to all workers and waits for first completion (or best result)
-    pub fn submit_job(&self, job: SearchJob) -> (crate::board::Move, i16) {
+    /// FIX Bug #3: Returns (move, score, completed_depth)
+    pub fn submit_job(&self, job: SearchJob) -> (crate::board::Move, i16, u8) {
         // Reset state for new job
         self.workers_done.store(0, Ordering::Release);
         self.job_stop_flag.store(false, Ordering::Release);
@@ -153,9 +156,10 @@ impl ThreadManager {
             if start.elapsed() > timeout {
                 // Timeout - stop all workers and return draw score
                 // FIX Bug #2A: Return 0 (draw) instead of -30000 to avoid score corruption
+                // FIX Bug #3: Return depth 0 on timeout
                 self.job_stop_flag.store(true, Ordering::Release);
                 self.job_available.store(false, Ordering::Release);
-                return (0, 0);
+                return (0, 0, 0);
             }
             thread::sleep(Duration::from_millis(10));
         }
@@ -170,9 +174,9 @@ impl ThreadManager {
             results_guard
                 .iter()
                 .filter_map(|r| *r)
-                .max_by_key(|(_mv, score)| *score)
-                // FIX Bug #2B: Return 0 (draw) instead of -30000 when no results
-                .unwrap_or((0, 0))
+                .max_by_key(|(_mv, score, _depth)| *score)
+                // FIX Bug #2B + #3: Return 0 (draw) and depth 0 when no results
+                .unwrap_or((0, 0, 0))
         };
 
         // Clear job (stop workers)
@@ -227,7 +231,8 @@ impl ThreadManager {
 
     /// Wait for async search result with timeout (blocking call).
     /// Returns None if timeout expires or no async search is active.
-    pub fn wait_async_result(&self, timeout_ms: u64) -> Option<(crate::board::Move, i16)> {
+    /// FIX Bug #3: Returns (move, score, completed_depth)
+    pub fn wait_async_result(&self, timeout_ms: u64) -> Option<(crate::board::Move, i16, u8)> {
         // Wait for at least one worker to complete
         let start = std::time::Instant::now();
         let timeout = Duration::from_millis(timeout_ms);
@@ -240,12 +245,13 @@ impl ThreadManager {
         }
 
         // Collect best result
+        // FIX Bug #3: Include completed depth in result
         let best_result = {
             let results_guard = self.results.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             results_guard
                 .iter()
                 .filter_map(|r| *r)
-                .max_by_key(|(_mv, score)| *score)
+                .max_by_key(|(_mv, score, _depth)| *score)
         };
 
         // Clear job
@@ -271,8 +277,9 @@ mod tests {
             board: Board::new(),
             params: SearchParams::new().max_depth(1),
         };
-        let (mv, score) = tm.submit_job(job);
+        let (mv, score, completed_depth) = tm.submit_job(job);
         assert!(score <= 30000);
+        assert!(completed_depth >= 1);
         tm.stop();
     }
 }

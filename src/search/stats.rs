@@ -49,6 +49,9 @@ pub struct SearchStats {
 
     /// Nodes per second rate
     pub nps: u64,
+
+    /// FIX Bug #3: Track last completed depth for UCI info display
+    pub completed_depth: u8,
 }
 
 impl SearchStats {

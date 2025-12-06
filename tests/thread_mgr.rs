@@ -9,7 +9,9 @@ fn test_thread_manager_basic() {
     let params = SearchParams::new().max_depth(2);
     let job = scacchista::search::thread_mgr::SearchJob { board, params };
     let result = tm.submit_job(job);
-    // submit_job returns (Move, score)
-    assert!(result.1 <= 30000);
+    // FIX Bug #3: submit_job now returns (Move, score, completed_depth)
+    let (_mv, score, completed_depth) = result;
+    assert!(score <= 30000);
+    assert!(completed_depth >= 1 && completed_depth <= 2, "Depth should be 1 or 2");
     tm.stop();
 }
