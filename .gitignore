@@ -11,3 +11,9 @@ slow64_linux
 # Rust build artifacts
 /target
 Cargo.lock
+
+# Game files
+*.pgn
+
+# Claude Code agents (local experiments)
+.claude/agents/

@@ -1,14 +1,14 @@
-/// Test case for Bug #1: Time Expiration Score Corruption
-///
-/// This test reproduces the critical bug where engine returns suicide moves
-/// when using time control (go movetime X) instead of depth control.
-///
-/// Bug mechanism:
-/// 1. Search runs out of time
-/// 2. negamax_pv() returns alpha (-30000)
-/// 3. Caller negates it: -(-30000) = +30000
-/// 4. Engine thinks it found mate and saves that move as best
-/// 5. Move is actually a blunder (e.g., losing queen for pawn)
+// Test case for Bug #1: Time Expiration Score Corruption
+//
+// This test reproduces the critical bug where engine returns suicide moves
+// when using time control (go movetime X) instead of depth control.
+//
+// Bug mechanism:
+// 1. Search runs out of time
+// 2. negamax_pv() returns alpha (-30000)
+// 3. Caller negates it: -(-30000) = +30000
+// 4. Engine thinks it found mate and saves that move as best
+// 5. Move is actually a blunder (e.g., losing queen for pawn)
 
 use scacchista::board::Board;
 use scacchista::search::{Search, SearchParams};

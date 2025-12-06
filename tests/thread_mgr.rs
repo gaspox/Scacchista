@@ -12,6 +12,6 @@ fn test_thread_manager_basic() {
     // FIX Bug #3: submit_job now returns (Move, score, completed_depth)
     let (_mv, score, completed_depth) = result;
     assert!(score <= 30000);
-    assert!(completed_depth >= 1 && completed_depth <= 2, "Depth should be 1 or 2");
+    assert!((1..=2).contains(&completed_depth), "Depth should be 1 or 2");
     tm.stop();
 }

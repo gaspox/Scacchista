@@ -1,7 +1,13 @@
 [package]
 name = "scacchista"
-version = "0.1.0"
+version = "0.4.0"
 edition = "2021"
+license = "GPL-3.0-or-later"
+authors = ["Gaspare <gaspox@users.noreply.github.com>"]
+description = "A UCI chess engine written in Rust with alpha-beta search, lazy-SMP threading, and HCE evaluation"
+repository = "https://github.com/gaspox/Scacchista"
+keywords = ["chess", "engine", "uci", "game"]
+categories = ["games"]
 
 [workspace]
 members = [
