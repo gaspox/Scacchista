@@ -378,6 +378,13 @@ impl Search {
             };
             self.board.unmake_move(undo);
 
+            // FIX Bug #1: Check if time expired during search
+            // If so, discard this score (it's from incomplete search, likely 0 from timeout)
+            // and return best move found so far
+            if self.time_expired {
+                break;
+            }
+
             // Update best
             if score > best_score {
                 best_score = score;
@@ -403,6 +410,13 @@ impl Search {
         self.stats.inc_tt_entry();
         // Store recorded in stats above.
 
+        // FIX Bug #1: If time expired before completing any move evaluation,
+        // best_score will still be -INFINITE. Return 0 (draw) instead to avoid
+        // the engine thinking it's in a lost position
+        if self.time_expired && best_score == -INFINITE {
+            best_score = 0;
+        }
+
         (best_root_move, best_score)
     }
 
@@ -414,9 +428,11 @@ impl Search {
         // Check time periodically (every 1024 nodes) to allow early exit
         // This prevents massive time overshoots during deep searches
         if self.check_time_expired() {
-            // Time expired - return current alpha as best guess
-            // The caller should check time_expired and discard partial results
-            return alpha;
+            // Time expired - return 0 (draw score) to avoid score corruption
+            // Returning alpha (which can be -30000) causes caller to negate it
+            // to +30000, which the engine interprets as mate and plays suicide moves
+            // FIX Bug #1: Time Expiration Score Corruption
+            return 0;
         }
 
         // Clear SEE cache for this node position
