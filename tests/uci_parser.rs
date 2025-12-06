@@ -14,6 +14,7 @@ fn test_parse_full_go_command() {
             movestogo,
             infinite,
             ponder,
+            ..  // Ignore winc, binc (added in Bug #4 fix)
         } => {
             assert_eq!(wtime, Some(300000));
             assert_eq!(btime, Some(300000));

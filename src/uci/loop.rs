@@ -102,6 +102,8 @@ impl UciEngine {
             UciCommand::Go {
                 wtime,
                 btime,
+                winc,  // FIX Bug #4
+                binc,  // FIX Bug #4
                 movetime,
                 depth,
                 nodes: _nodes,
@@ -116,6 +118,8 @@ impl UciEngine {
                     &crate::search::params::TimeManagement::new(),
                     wtime,
                     btime,
+                    winc,     // FIX Bug #4: Pass increment
+                    binc,     // FIX Bug #4: Pass increment
                     movetime,
                     side_white,
                 );
