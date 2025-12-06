@@ -22,20 +22,21 @@ const KING_VALUE: i16 = 20000;
 // Indici: rank 0 = prima traversa (A1..H1), rank 7 = ottava traversa (A8..H8)
 // Per il Nero, specchiamo verticalmente: flip_sq = sq XOR 56
 
-/// PSQT per i pedoni
+/// PSQT per i pedoni (MIGLIORATO - Fix GrandMaster #5)
 /// Incentiva:
 /// - Pedoni centrali (e4, d4, e5, d5): +20..+30 cp
 /// - Avanzamento controllato
-/// - Penalità per pedoni arretrati
+/// - **NUOVO**: Pedoni passati avanzati (rank 6/7) → +100/+200 cp (era +20/+35)
+/// - Motivazione: L'engine non capiva il valore dei pedoni avanzati vicini alla promozione
 const PAWN_PSQT: [i16; 64] = [
     // Rank 1 (impossibile per i pedoni, ma per simmetria)
     0, 0, 0, 0, 0, 0, 0, 0, // Rank 2 (pedoni iniziali)
-    5, 5, 5, 5, 5, 5, 5, 5, // Rank 3 (ridotto laterali a/b/g/h)
-    5, 5, 10, 15, 15, 10, 5, 5, // Rank 4 (aumentato centro d/e, ridotto laterali)
-    10, 10, 20, 30, 30, 20, 10, 10, // Rank 5 (avanzati)
-    20, 20, 25, 30, 30, 25, 20, 20, // Rank 6 (molto avanzati)
-    25, 25, 30, 35, 35, 30, 25, 25, // Rank 7 (vicini alla promozione)
-    50, 50, 50, 50, 50, 50, 50, 50, // Rank 8 (impossibile)
+    5, 5, 5, 5, 5, 5, 5, 5, // Rank 3
+    5, 5, 10, 15, 15, 10, 5, 5, // Rank 4
+    10, 10, 20, 30, 30, 20, 10, 10, // Rank 5
+    50, 50, 70, 90, 90, 70, 50, 50, // Rank 6 (molto avanzati) - AUMENTATO: +50/+90 cp (era +20/+30)
+    120, 120, 150, 180, 180, 150, 120, 120, // Rank 7 (vicini alla promozione) - AUMENTATO: +120/+180 cp (era +25/+35)
+    300, 300, 350, 400, 400, 350, 300, 300, // Rank 8 (impossibile, ma teoricamente +300/+400 cp)
     0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
@@ -164,6 +165,45 @@ fn count_pawn_shield(board: &Board, king_sq: usize, color: Color) -> i16 {
     count
 }
 
+/// Conta pezzi minori e maggiori attivi (N, B, R, Q) per un colore
+///
+/// Usato per calcolare il pericolo per il Re avversario: più pezzi attaccanti
+/// sono in gioco, più è pericoloso avere il Re esposto al centro.
+///
+/// # Argomenti
+/// * `board` - La posizione da valutare
+/// * `color` - Colore di cui contare i pezzi
+///
+/// # Returns
+/// Numero di pezzi minori e maggiori (esclusi pedoni e Re)
+fn count_active_pieces(board: &Board, color: Color) -> i16 {
+    let mut count = 0;
+    count += board.piece_bb(PieceKind::Knight, color).count_ones() as i16;
+    count += board.piece_bb(PieceKind::Bishop, color).count_ones() as i16;
+    count += board.piece_bb(PieceKind::Rook, color).count_ones() as i16;
+    count += board.piece_bb(PieceKind::Queen, color).count_ones() as i16;
+    count
+}
+
+/// Verifica se il Re ha ancora diritto di arrocco (corto o lungo)
+///
+/// Controlla i bit del campo board.castling:
+/// - White: bit 3 (K) o bit 2 (Q) → 0b1100
+/// - Black: bit 1 (k) o bit 0 (q) → 0b0011
+///
+/// # Argomenti
+/// * `board` - La posizione da valutare
+/// * `color` - Colore del Re da controllare
+///
+/// # Returns
+/// `true` se il Re può ancora arroccare (corto o lungo), `false` altrimenti
+fn has_castling_rights(board: &Board, color: Color) -> bool {
+    match color {
+        Color::White => (board.castling & 0b1100u8) != 0, // K o Q
+        Color::Black => (board.castling & 0b0011u8) != 0, // k o q
+    }
+}
+
 /// Valuta il controllo del centro
 ///
 /// Calcola uno score basato sul controllo delle caselle centrali:
@@ -215,11 +255,17 @@ fn center_control(board: &Board) -> i16 {
     score
 }
 
-/// Valuta la sicurezza del Re
+/// Valuta la sicurezza del Re (MIGLIORATO - Fix GrandMaster #1)
 ///
 /// Calcola uno score basato su:
-/// 1. Penalità se il Re è al centro (colonne d,e) e non ha arrocato: -50 cp
-/// 2. Bonus per ogni pedone scudo davanti al Re: +15 cp
+/// 1. **NUOVO**: Penalità severa se ha perso diritto arrocco in apertura: -70 cp
+/// 2. **MIGLIORATO**: Penalità dinamica per Re al centro, proporzionale a pezzi avversari
+/// 3. Bonus per ogni pedone scudo davanti al Re: +15 cp
+///
+/// # Motivazione (da analisi prova_2.pgn)
+/// - Mossa 13.Qxe7?? → Qxe7+ ha perso il diritto di arrocco in apertura
+/// - L'engine non ha capito che è catastrofico (vecchia penalità: solo -50 cp fissi)
+/// - Re esposto con tanti pezzi avversari attivi è molto più pericoloso
 ///
 /// # Argomenti
 /// * `board` - La posizione da valutare
@@ -232,14 +278,42 @@ fn king_safety(board: &Board, color: Color) -> i16 {
 
     // 1. Trova posizione Re
     let king_sq = board.king_sq(color);
-
-    // 2. Penalità se Re al centro (files d,e = 3,4) prima di arroccare
     let file = king_sq % 8;
-    if (file == 3 || file == 4) && !has_castled(board, color) {
-        safety -= 50;
+
+    // 2. Verifica se Re ha arrocato
+    let castled = has_castled(board, color);
+
+    // 3. Verifica se Re ha ancora diritto di arrocco
+    let has_rights = has_castling_rights(board, color);
+
+    // 4. NUOVO: Penalità pesante per perdita diritto arrocco in apertura
+    // Se siamo in apertura (fullmove 5-14), re non ha arrocato, e ha perso diritti → GRAVE
+    // Nota: fullmove >= 5 evita falsi positivi su FEN personalizzate nelle prime mosse
+    if board.fullmove >= 5 && board.fullmove < 15 && !castled && !has_rights {
+        // Re ha perso diritto arrocco in apertura senza aver arrocato
+        // Es: 13.Qxe7?? in prova_2.pgn → Qxe7+ e re bloccato in e1
+        safety -= 70; // Penalità severa (range -60/-80 cp)
     }
 
-    // 3. Bonus pedoni scudo (3x3 davanti al Re)
+    // 5. MIGLIORATO: Penalità per Re al centro, proporzionale a pezzi avversari
+    if (file == 3 || file == 4) && !castled {
+        // Conta pezzi avversari attivi (più pezzi = re più in pericolo)
+        let opponent_color = match color {
+            Color::White => Color::Black,
+            Color::Black => Color::White,
+        };
+        let active_pieces = count_active_pieces(board, opponent_color);
+
+        // Penalità base -50, aumentata in base a pezzi avversari
+        // Formula: -50 * (1 + active_pieces / 6)
+        // Es: 4 pezzi avversari → -50 * (1 + 4/6) ≈ -83 cp
+        //     8 pezzi avversari → -50 * (1 + 8/6) ≈ -117 cp
+        let base_penalty = 50;
+        let multiplier = 100 + (active_pieces * 16); // 100 = 1.0, 16 ≈ 1/6 scaled to percentage
+        safety -= (base_penalty * multiplier / 100) as i16;
+    }
+
+    // 6. Bonus pedoni scudo (invariato)
     let pawn_shield = count_pawn_shield(board, king_sq, color);
     safety += pawn_shield * 15;
 
@@ -722,6 +796,84 @@ mod tests {
         assert_eq!(
             white_safety, 45,
             "Re arrocato lungo con 3 pedoni scudo dovrebbe avere +45 cp"
+        );
+    }
+
+    #[test]
+    fn test_king_safety_lost_castling_rights_in_opening() {
+        // Test basato su prova_2.pgn dopo 13.Qxe7 Qxe7+ 14.Kf1
+        // Re bianco ha perso diritto arrocco in apertura (mossa 14) → penalità severa
+        let mut board = Board::new();
+        board
+            .set_from_fen("r5k1/pp2qppp/1n1p4/2pPb3/2P1P3/2N2N2/PP2BPPP/R1B2K1R b - - 1 14")
+            .unwrap();
+
+        let white_safety = king_safety(&board, Color::White);
+
+        // Re in f1 (file 5, non centro), fullmove=14, no castling rights, not castled
+        // - Penalità -70 per perdita diritto arrocco in apertura
+        // - NO penalità dinamica (re in f1, non d1/e1)
+        // - Bonus pedoni scudo: probabilmente 2-3 pedoni → +30/+45 cp
+        // Totale atteso: circa -70 + 30/45 = -40/-25 cp
+        assert!(
+            white_safety < -20 && white_safety > -50,
+            "Re che ha perso diritto arrocco in apertura (mossa 14) dovrebbe avere penalità severa: white_safety={white_safety}"
+        );
+
+        // Confronto: se il re avesse ancora diritti di arrocco, la penalità sarebbe minore
+        let mut board_with_rights = Board::new();
+        board_with_rights
+            .set_from_fen("r5k1/pp2qppp/1n1p4/2pPb3/2P1P3/2N2N2/PP2BPPP/R1B2K1R b KQ - 1 14")
+            .unwrap();
+
+        let white_safety_with_rights = king_safety(&board_with_rights, Color::White);
+
+        // Con diritti di arrocco, non si applica la penalità -70
+        assert!(
+            white_safety_with_rights > white_safety,
+            "Re con diritti di arrocco dovrebbe essere più sicuro: with_rights={white_safety_with_rights}, without={white_safety}"
+        );
+    }
+
+    #[test]
+    fn test_king_safety_center_with_active_pieces() {
+        // Re al centro (e1) con molti pezzi avversari attivi → penalità aumentata
+        let mut board = Board::new();
+        board
+            .set_from_fen("rnbq1rk1/pppppppp/8/8/8/8/PPPPPPPP/RNBQK2R w KQ - 0 10")
+            .unwrap();
+
+        let white_safety = king_safety(&board, Color::White);
+
+        // Re in e1 (centro), non arrocato, fullmove=10, ha diritti di arrocco (KQ)
+        // Pezzi neri attivi dalla FEN: 1N + 1B + 2R + 1Q = 5 pezzi
+        // Penalità dinamica: -50 * (1 + 5/6) ≈ -50 * 1.83 ≈ -92 cp
+        // Bonus pedoni scudo: 3 pedoni (d2,e2,f2) → +45 cp
+        // Totale atteso: -92 + 45 = -47 cp (circa -45)
+        // NO penalità -70 (ha ancora diritti di arrocco KQ)
+        assert!(
+            white_safety < -30 && white_safety > -60,
+            "Re al centro con 5 pezzi avversari attivi: white_safety={white_safety}"
+        );
+
+        // Confronto: re al centro con pochi pezzi avversari ma stessi pedoni scudo
+        let mut board_few_pieces = Board::new();
+        board_few_pieces
+            .set_from_fen("4k3/8/8/8/8/8/PPPPPPPP/RNBQK2R w KQ - 0 10")
+            .unwrap();
+
+        let white_safety_few = king_safety(&board_few_pieces, Color::White);
+
+        // Con 0 pezzi avversari: penalità -50 * (1 + 0/6) = -50, bonus +45 pedoni = -5 cp
+        assert!(
+            white_safety_few > -20 && white_safety_few < 10,
+            "Re al centro con 0 pezzi avversari: white_safety_few={white_safety_few}"
+        );
+
+        // Re al centro con molti pezzi deve essere MENO sicuro (più negativo)
+        assert!(
+            white_safety < white_safety_few,
+            "Re con molti pezzi avversari più in pericolo: many={white_safety}, few={white_safety_few}"
         );
     }
 }

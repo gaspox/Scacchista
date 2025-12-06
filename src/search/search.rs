@@ -694,8 +694,10 @@ impl Search {
             let undo = self.board.make_move(mv);
 
             // Check extension: extend search by 1 ply if move gives check
+            // MIGLIORATO (Fix GrandMaster #3): Limite aumentato da ply<10 a ply<16
+            // per permettere di vedere meglio sequenze tattiche lunghe (es: Re1+ Kh2 Rxh1+)
             let in_check = self.is_in_check();
-            let extension = if in_check && depth > 0 && ply < 10 {
+            let extension = if in_check && depth > 0 && ply < 16 {
                 1
             } else {
                 0
