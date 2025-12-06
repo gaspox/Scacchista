@@ -74,7 +74,7 @@ impl ThreadManager {
 
                     // Get current job (if any)
                     let job = {
-                        let guard = job_clone.lock().unwrap();
+                        let guard = job_clone.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                         guard.clone()
                     };
 
@@ -91,7 +91,7 @@ impl ThreadManager {
 
                         // Store result
                         {
-                            let mut results_guard = results_clone.lock().unwrap();
+                            let mut results_guard = results_clone.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                             results_guard[worker_id] = Some((mv, score));
                         }
 
@@ -130,7 +130,7 @@ impl ThreadManager {
         self.workers_done.store(0, Ordering::Release);
         self.job_stop_flag.store(false, Ordering::Release);
         {
-            let mut results_guard = self.results.lock().unwrap();
+            let mut results_guard = self.results.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             for r in results_guard.iter_mut() {
                 *r = None;
             }
@@ -138,7 +138,7 @@ impl ThreadManager {
 
         // Set current job (broadcast to all workers)
         {
-            let mut job_guard = self.current_job.lock().unwrap();
+            let mut job_guard = self.current_job.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             *job_guard = Some(job);
         }
 
@@ -151,28 +151,34 @@ impl ThreadManager {
 
         while self.workers_done.load(Ordering::Acquire) == 0 {
             if start.elapsed() > timeout {
-                // Timeout - stop all workers and return error
+                // Timeout - stop all workers and return draw score
+                // FIX Bug #2A: Return 0 (draw) instead of -30000 to avoid score corruption
                 self.job_stop_flag.store(true, Ordering::Release);
                 self.job_available.store(false, Ordering::Release);
-                return (0, -30000);
+                return (0, 0);
             }
             thread::sleep(Duration::from_millis(10));
         }
 
         // Collect results from workers (take best score)
         let best_result = {
-            let results_guard = self.results.lock().unwrap();
+            // FIX Bug #2B: Handle mutex poisoning gracefully
+            let results_guard = self.results.lock().unwrap_or_else(|poisoned| {
+                // Mutex was poisoned - recover the guard and continue
+                poisoned.into_inner()
+            });
             results_guard
                 .iter()
                 .filter_map(|r| *r)
                 .max_by_key(|(_mv, score)| *score)
-                .unwrap_or((0, -30000))
+                // FIX Bug #2B: Return 0 (draw) instead of -30000 when no results
+                .unwrap_or((0, 0))
         };
 
         // Clear job (stop workers)
         self.job_available.store(false, Ordering::Release);
         {
-            let mut job_guard = self.current_job.lock().unwrap();
+            let mut job_guard = self.current_job.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             *job_guard = None;
         }
 
@@ -200,7 +206,7 @@ impl ThreadManager {
         self.workers_done.store(0, Ordering::Release);
         self.job_stop_flag.store(false, Ordering::Release);
         {
-            let mut results_guard = self.results.lock().unwrap();
+            let mut results_guard = self.results.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             for r in results_guard.iter_mut() {
                 *r = None;
             }
@@ -208,7 +214,7 @@ impl ThreadManager {
 
         // Set current job (broadcast to all workers)
         {
-            let mut job_guard = self.current_job.lock().unwrap();
+            let mut job_guard = self.current_job.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             *job_guard = Some(job);
         }
 
@@ -235,7 +241,7 @@ impl ThreadManager {
 
         // Collect best result
         let best_result = {
-            let results_guard = self.results.lock().unwrap();
+            let results_guard = self.results.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             results_guard
                 .iter()
                 .filter_map(|r| *r)
