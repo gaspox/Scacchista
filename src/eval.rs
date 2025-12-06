@@ -292,7 +292,8 @@ fn king_safety(board: &Board, color: Color) -> i16 {
     if board.fullmove >= 5 && board.fullmove < 15 && !castled && !has_rights {
         // Re ha perso diritto arrocco in apertura senza aver arrocato
         // Es: 13.Qxe7?? in prova_2.pgn → Qxe7+ e re bloccato in e1
-        safety -= 70; // Penalità severa (range -60/-80 cp)
+        // FIX v0.4.0: Aumentata da -70 a -120 cp (test pratico mostrava che -70 non bastava)
+        safety -= 120; // Penalità severa (-120 cp > valore pezzo minore)
     }
 
     // 5. MIGLIORATO: Penalità per Re al centro, proporzionale a pezzi avversari
@@ -811,12 +812,12 @@ mod tests {
         let white_safety = king_safety(&board, Color::White);
 
         // Re in f1 (file 5, non centro), fullmove=14, no castling rights, not castled
-        // - Penalità -70 per perdita diritto arrocco in apertura
+        // - Penalità -120 per perdita diritto arrocco in apertura (FIX v0.4.0: era -70)
         // - NO penalità dinamica (re in f1, non d1/e1)
         // - Bonus pedoni scudo: probabilmente 2-3 pedoni → +30/+45 cp
-        // Totale atteso: circa -70 + 30/45 = -40/-25 cp
+        // Totale atteso: circa -120 + 30/45 = -90/-75 cp
         assert!(
-            white_safety < -20 && white_safety > -50,
+            white_safety < -60 && white_safety > -100,
             "Re che ha perso diritto arrocco in apertura (mossa 14) dovrebbe avere penalità severa: white_safety={white_safety}"
         );
 
