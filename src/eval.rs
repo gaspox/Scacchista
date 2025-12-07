@@ -204,6 +204,25 @@ fn has_castling_rights(board: &Board, color: Color) -> bool {
     }
 }
 
+/// Verifica se il Re è sotto scacco
+///
+/// Un Re è sotto scacco se la sua casella è attaccata da pezzi avversari.
+///
+/// # Argomenti
+/// * `board` - La posizione da valutare
+/// * `color` - Colore del Re da controllare
+///
+/// # Returns
+/// `true` se il Re è sotto scacco, `false` altrimenti
+fn is_in_check(board: &Board, color: Color) -> bool {
+    let king_sq = board.king_sq(color);
+    let opponent_color = match color {
+        Color::White => Color::Black,
+        Color::Black => Color::White,
+    };
+    board.is_square_attacked(king_sq, opponent_color)
+}
+
 /// Valuta il controllo del centro
 ///
 /// Calcola uno score basato sul controllo delle caselle centrali:
@@ -292,8 +311,22 @@ fn king_safety(board: &Board, color: Color) -> i16 {
     if board.fullmove >= 5 && board.fullmove < 15 && !castled && !has_rights {
         // Re ha perso diritto arrocco in apertura senza aver arrocato
         // Es: 13.Qxe7?? in prova_2.pgn → Qxe7+ e re bloccato in e1
-        // FIX v0.4.0: Aumentata da -70 a -120 cp (test pratico mostrava che -70 non bastava)
-        safety -= 120; // Penalità severa (-120 cp > valore pezzo minore)
+        // FIX v0.4.1: Aumentata da -120 a -400 cp (approssimazione Desperado mode)
+        // La perdita dell'arrocco in apertura è CATASTROFICA e deve dominare
+        // il vantaggio materiale di +330 cp (Donna vs Alfiere)
+        safety -= 400; // Penalità catastrofica (> valore di un pezzo minore)
+    }
+
+    // 4.5 NUOVO (Fix Issue #1): Threat evaluation - Re sotto scacco che perderà arrocco
+    // Questa è una "penalità preventiva" che si applica PRIMA che il re perda i diritti
+    // Se il re è sotto scacco E ha ancora diritti di arrocco → molto pericoloso
+    // Esempio: Dopo 13.Qxe7 Qxe7+, il re bianco è sotto scacco e dovrà muoversi
+    // perdendo i diritti di arrocco. Questa penalità previene Qxe7.
+    if is_in_check(board, color) && has_rights {
+        // Penalità preventiva: il re è sotto scacco e probabilmente perderà arrocco
+        // AUMENTATA a -200 cp (circa 2/3 di pezzo minore) dopo test pratico
+        // -80 cp non era sufficiente per prevenire Qxe7
+        safety -= 200;
     }
 
     // 5. MIGLIORATO: Penalità per Re al centro, proporzionale a pezzi avversari
@@ -457,6 +490,9 @@ pub fn evaluate_lazy(board: &Board) -> i16 {
 
 /// Fast evaluation: only material + PSQT (no king safety, development, etc.)
 /// Used in quiescence search where speed is critical
+///
+/// NOTE: Include CRITICAL king safety penalties (castling rights loss in opening)
+/// to avoid catastrophic blunders in tactical lines
 pub fn evaluate_fast(board: &Board) -> i16 {
     let mut white_score: i32 = 0;
     let mut black_score: i32 = 0;
@@ -495,6 +531,15 @@ pub fn evaluate_fast(board: &Board) -> i16 {
         }
     }
 
+    // CRITICAL: Apply catastrophic penalty for losing castling rights in opening
+    // This is essential to prevent blunders like Qxe7?? (Issue #1)
+    // We only add this penalty, not full king_safety(), to keep evaluate_fast fast
+    let white_king_penalty = king_safety_critical_only(board, Color::White);
+    let black_king_penalty = king_safety_critical_only(board, Color::Black);
+
+    white_score += white_king_penalty as i32;
+    black_score += black_king_penalty as i32;
+
     let relative_score = (white_score - black_score) as i16;
 
     if board.side == Color::Black {
@@ -502,6 +547,31 @@ pub fn evaluate_fast(board: &Board) -> i16 {
     } else {
         relative_score
     }
+}
+
+/// Fast version of king_safety: only catastrophic penalties (no pawn shield, no dynamic penalties)
+/// Used in evaluate_fast() to keep quiescence search fast but avoid critical blunders
+fn king_safety_critical_only(board: &Board, color: Color) -> i16 {
+    let mut safety = 0;
+
+    // Check if king has castled
+    let king_sq = board.king_sq(color);
+    let castled = has_castled(board, color);
+
+    // Check if king has castling rights
+    let has_rights = has_castling_rights(board, color);
+
+    // CRITICAL PENALTY: Lost castling rights in opening without castling
+    if board.fullmove >= 5 && board.fullmove < 15 && !castled && !has_rights {
+        safety -= 400; // Catastrophic penalty
+    }
+
+    // CRITICAL PENALTY: King in check with castling rights (threat evaluation)
+    if is_in_check(board, color) && has_rights {
+        safety -= 200; // Preventive penalty
+    }
+
+    safety
 }
 
 /// Valuta la posizione con materiale + PSQT + penalità sviluppo
