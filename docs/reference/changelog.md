@@ -2,6 +2,47 @@
 
 All notable changes to Scacchista are documented in this file.
 
+## [0.5.0-dev] - February 2026
+
+### Major Features
+
+#### Principal Variation Search (PVS) at Root
+- Implemented PVS logic specifically for the iteration deepening root search.
+- Use of null-window search for non-PV moves to increase pruning efficiency.
+
+### Bug Fixes
+
+#### Futility Pruning MATE Score Fix
+- **Critical**: Restored correct evaluation when Futility Pruning skips all moves in a node.
+- Previously, it erroneously returned `-MATE`, leading to evaluation corruption at the root.
+- Added `legal_moves` tracking to safely return `alpha` (fail-low) if all moves are pruned.
+
+## [0.4.1] - January 2026
+
+### Performance & Optimization
+
+#### Dedicated Capture Generation in QSearch
+- Implemented specialized capture-only generator for quiescence search.
+- Reduces moves to search from ~40-50 down to ~5-10 per node.
+- NPS boost: +40-60%.
+
+#### Delta Pruning
+- Implemented delta pruning in qsearch to skip futile captures.
+- NPS boost: +15-20%.
+
+#### Lock-Free Transposition Table
+- Replaced lock-based TT with a multi-thread friendly, concurrent access pattern.
+- Significant scaling improvement for multi-core search.
+
+#### Bitboard-based Static Evaluation
+- Replaced iterative square-by-square piece evaluation with high-performance bitboard operations.
+- NPS boost for `evaluate_fast()`: 2-3x speedup per call.
+
+### Bug Fixes
+- Fixed pawn promotion move generation bugs.
+- Fixed UCI time management (movetime vs increment priority).
+- Fixed thread-safety issues in Lazy-SMP.
+
 ## [0.2.1-beta] - December 2025
 
 ### Performance Improvements

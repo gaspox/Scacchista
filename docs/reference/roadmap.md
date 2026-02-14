@@ -4,11 +4,20 @@ This document outlines planned improvements and future development for Scacchist
 
 ## Current Status
 
-**Version:** 0.2.1-beta
-**ELO Estimate:** ~1500-1800
-**Test Coverage:** 80+ tests passing
+**Version:** 0.5.0-dev
+**ELO Estimate:** ~1400-1600
+**Test Coverage:** 90+ tests passing
 
 ## Completed Milestones
+
+### Phase 5: Tactical & Architectural Polish (Complete)
+
+- [x] Dedicated Capture Generation in QSearch
+- [x] Delta Pruning
+- [x] Lock-Free Transposition Table
+- [x] Bitboard-based static evaluation (HCE)
+- [x] Draw detection (Threefold, 50-move, Insufficient material)
+- [x] PVS (Principal Variation Search) at Root [v0.5.0-dev]
 
 ### Phase 1: Core Engine (Complete)
 
@@ -90,18 +99,7 @@ Options:
 
 ### Medium Priority
 
-#### 4. Draw Detection
-
-**Impact:** +80-100 ELO
-**Effort:** 2-3 hours
-**Status:** Not started
-
-Components:
-- Threefold repetition
-- Fifty-move rule
-- Insufficient material
-
-#### 5. Endgame Recognition
+#### 4. Endgame Recognition
 
 **Impact:** +60-80 ELO
 **Effort:** 1-2 hours

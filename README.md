@@ -3,7 +3,7 @@
 [![CI](https://github.com/gaspox/Scacchista/actions/workflows/ci.yml/badge.svg)](https://github.com/gaspox/Scacchista/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75+-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-0.4.1-green.svg)](https://github.com/gaspox/Scacchista/releases)
+[![Version](https://img.shields.io/badge/version-0.5.0--dev-green.svg)](https://github.com/gaspox/Scacchista/releases)
 
 A UCI-compliant chess engine written in Rust, featuring alpha-beta search with parallel lazy-SMP threading and hand-crafted evaluation.
 
@@ -156,7 +156,9 @@ Scacchista uses the [`shakmaty`](https://github.com/niklasf/shakmaty) crate (GPL
 
 See [Releases](https://github.com/gaspox/Scacchista/releases) for precompiled binaries.
 
-Latest: **v0.4.1** - Bug fixes (move generation for pawn promotions, time management for fixed movestogo/movestogo), and expanded regression test suite (tactical, draw detection, threading stress).
+Latest: **v0.5.0-dev** (Work in Progress) - Principal Variation Search (PVS) at root, Futility Pruning fix for mate scores, and major performance optimizations from v0.4.1.
+
+See [v0.4.1](https://github.com/gaspox/Scacchista/releases/tag/v0.4.1) for the last stable version with capture-only qsearch, lock-free TT, and bitboard evaluation.
 
 ## Acknowledgments
 
