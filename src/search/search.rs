@@ -344,85 +344,76 @@ impl Search {
         (best_move, best_score)
     }
 
-    /// Iterative deepening framework (phase 1)
+    /// Iterative deepening framework (phase 1) with PVS at root
     fn iddfs(&mut self, depth: u8, best_move: Move, mut alpha: i16, beta: i16) -> (Move, i16) {
-        // Root search with move ordering
+        // Root search with move ordering and PVS
         let mut best_root_move = best_move;
         let mut best_score = -INFINITE;
         let root_moves = self.generate_root_moves();
-
-        // If no root moves (e.g., empty/invalid position), record a node and store a TT entry
-        if root_moves.is_empty() {
-            let sc = if depth <= self.params.qsearch_depth {
-                self.qsearch(-INFINITE, INFINITE, self.params.qsearch_depth)
-            } else {
-                self.static_eval()
-            };
-            // record a node and TT entry so stats/tests consider this position handled
-            self.stats.inc_node();
-            let key = self.board.recalc_zobrist();
-            self.tt.store(key, sc, depth, NodeType::Exact, 0);
-            self.stats.inc_tt_entry();
-            return (0, sc);
-        }
+        
+        // DEBUG
+        // eprintln!("IDDFS depth={} alpha={} beta={} num_moves={}", depth, alpha, beta, root_moves.len());
 
         let num_root_moves = root_moves.len();
-        for (i, mv) in root_moves.into_iter().enumerate() {
-            // Increment node count for root moves
-            self.stats.inc_node();
-            self.stats.inc_root_node();
+    for (i, mv) in root_moves.into_iter().enumerate() {
+        // Increment node count for root moves
+        self.stats.inc_node();
+        self.stats.inc_root_node();
 
-            let undo = self.board.make_move(mv);
-            // Always do full negamax search from root
-            let score = -self.negamax_pv(depth - 1, -beta, -alpha, 0);
-            let node_type = if score >= beta {
-                NodeType::LowerBound
-            } else if score <= alpha {
-                NodeType::UpperBound
+        let undo = self.board.make_move(mv);
+        
+        // PVS: First move with full window, rest with null-window + re-search
+        let score = if i == 0 {
+            // First move (expected PV): full window search
+            -self.negamax_pv(depth - 1, -beta, -alpha, 0)
+        } else {
+            // Non-PV moves: null-window search
+            let null_score = -self.negamax_pv(depth - 1, -alpha - 1, -alpha, 0);
+            
+            // If null-window fails high and is not a beta cutoff, re-search with full window
+            if null_score > alpha && null_score < beta {
+                // Re-search with full window
+                -self.negamax_pv(depth - 1, -beta, -alpha, 0)
             } else {
-                NodeType::Exact
-            };
-            self.board.unmake_move(undo);
-
-            // FIX Bug #1: Check if time expired during search
-            // If so, discard this score (it's from incomplete search, likely 0 from timeout)
-            // and return best move found so far
-            if self.time_expired {
-                break;
+                null_score
             }
+        };
+        
+        let node_type = if score >= beta {
+            NodeType::LowerBound
+        } else if score <= alpha {
+             NodeType::UpperBound
+        } else {
+             NodeType::Exact
+        };
+        self.board.unmake_move(undo);
 
-            // Update best
-            if score > best_score {
-                best_score = score;
-                best_root_move = mv;
-                // Update alpha for subsequent moves
-                if score > alpha {
-                    alpha = score;
-                }
-            }
+        // Debug prints
+        // eprintln!("Move {} ({:?}) score={} best_score={} alpha={} time_expired={}", i, mv, score, best_score, alpha, self.time_expired);
 
-            if score >= beta {
-                // Beta cutoff
-                break;
+        // FIX Bug #1: Check if time expired during search
+        if self.time_expired {
+            break;
+        }
+
+        // Update best
+        if score > best_score {
+            // eprintln!("  UPDATING BEST: {} -> {}", best_score, score);
+            best_score = score;
+            best_root_move = mv;
+            // Update alpha for subsequent moves
+            if score > alpha {
+                alpha = score;
             }
         }
 
-        // Store in transposition table
-        let key = self.board.recalc_zobrist();
-        self.tt.store(key, best_score, depth, NodeType::Exact, best_root_move);
-        self.stats.inc_tt_entry();
-        // Store recorded in stats above.
-
-        // FIX Bug #1: If time expired before completing any move evaluation,
-        // best_score will still be -INFINITE. Return 0 (draw) instead to avoid
-        // the engine thinking it's in a lost position
-        if self.time_expired && best_score == -INFINITE {
-            best_score = 0;
+        if score >= beta {
+            // Beta cutoff
+            break;
         }
-
-        (best_root_move, best_score)
     }
-
+    (best_root_move, best_score)
+}
     /// Principal variation search (alpha-beta)
     fn negamax_pv(&mut self, depth: u8, mut alpha: i16, beta: i16, ply: u8) -> i16 {
         // Increment node counter
@@ -446,6 +437,7 @@ impl Search {
         // FIX: Use i32 to avoid overflow when computing window size
         // (beta - alpha can overflow i16 when beta=30000, alpha=-30000)
         let is_pv_node = (beta as i32) - (alpha as i32) > 1; // PV node has open window
+        // Probe TT
         // Probe TT
         if let Some(entry) = self.tt.probe(key) {
             self.stats.inc_tt_hit();
@@ -684,6 +676,7 @@ impl Search {
 
         let mut best = -INFINITE;
         let mut best_move = 0;
+        let legal_moves = moves.len();
 
         for (move_idx, mv) in moves.into_iter().enumerate() {
             // Determine move characteristics for LMR
@@ -794,6 +787,23 @@ impl Search {
                     }
                 }
             }
+        }
+
+        // Check for mate or stalemate
+        if legal_moves == 0 {
+            if parent_in_check {
+                return -MATE + ply as i16;
+            } else {
+                return 0;
+            }
+        }
+
+        // If we have legal moves but they were all pruned (e.g. by futility pruning),
+        // best will still be -INFINITE. This is NOT a mate.
+        // We should return alpha (fail-low) or the static eval that justified the pruning.
+        // Returning alpha is safe and signals that we found nothing better than what we had.
+        if best == -INFINITE {
+            return alpha;
         }
 
         // Store in transposition table
