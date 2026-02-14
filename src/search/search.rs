@@ -41,8 +41,8 @@ pub struct Search {
     /// The current board position (mutable during search)
     board: Board,
 
-    /// Transposition table for caching (shared across threads via Arc<Mutex>)
-    tt: Arc<Mutex<TranspositionTable>>,
+    /// Transposition table for caching (lock-free, shared across threads)
+    tt: Arc<TranspositionTable>,
 
     /// Search parameters
     params: SearchParams,
@@ -89,7 +89,7 @@ impl Search {
         let max_ply = params.max_depth as usize + 1; // +1 for array indexing
         Self {
             board,
-            tt: Arc::new(Mutex::new(TranspositionTable::new(tt_size_mb))),
+            tt: Arc::new(TranspositionTable::new(tt_size_mb)),
             params,
             stats: SearchStats::new(),
             time_mgmt: TimeManagement::new(),
@@ -148,7 +148,7 @@ impl Search {
 
     /// Use a shared transposition table (for multi-threaded search)
     /// This allows multiple search instances to share the same TT
-    pub fn with_shared_tt(mut self, tt: Arc<Mutex<TranspositionTable>>) -> Self {
+    pub fn with_shared_tt(mut self, tt: Arc<TranspositionTable>) -> Self {
         self.tt = tt;
         self
     }
@@ -191,7 +191,7 @@ impl Search {
 
         self.stats.reset();
         self.stats.start_timing();
-        self.tt.lock().unwrap().new_search();
+        self.tt.new_search();
 
         // Reset time management state for new search
         self.time_expired = false;
@@ -281,7 +281,7 @@ impl Search {
 
         self.stats.reset();
         self.stats.start_timing();
-        self.tt.lock().unwrap().new_search();
+        self.tt.new_search();
 
         // Reset time management state for new search
         self.time_expired = false;
@@ -361,10 +361,7 @@ impl Search {
             // record a node and TT entry so stats/tests consider this position handled
             self.stats.inc_node();
             let key = self.board.recalc_zobrist();
-            self.tt
-                .lock()
-                .unwrap()
-                .store(key, sc, depth, NodeType::Exact, 0);
+            self.tt.store(key, sc, depth, NodeType::Exact, 0);
             self.stats.inc_tt_entry();
             return (0, sc);
         }
@@ -412,10 +409,7 @@ impl Search {
 
         // Store in transposition table
         let key = self.board.recalc_zobrist();
-        self.tt
-            .lock()
-            .unwrap()
-            .store(key, best_score, depth, NodeType::Exact, best_root_move);
+        self.tt.store(key, best_score, depth, NodeType::Exact, best_root_move);
         self.stats.inc_tt_entry();
         // Store recorded in stats above.
 
@@ -452,7 +446,8 @@ impl Search {
         // FIX: Use i32 to avoid overflow when computing window size
         // (beta - alpha can overflow i16 when beta=30000, alpha=-30000)
         let is_pv_node = (beta as i32) - (alpha as i32) > 1; // PV node has open window
-        if let Some(entry) = self.tt.lock().unwrap().probe(key).copied() {
+        // Probe TT
+        if let Some(entry) = self.tt.probe(key) {
             self.stats.inc_tt_hit();
             // In PV nodes, only use TT for move ordering, not for cutoffs
             // This prevents score instability from aspiration window re-searches
@@ -616,7 +611,8 @@ impl Search {
             "Incremental zobrist hash diverged from recalculated hash"
         );
         let key = self.board.zobrist;
-        if let Some(entry) = self.tt.lock().unwrap().probe(key).copied() {
+        // Probe TT for cached result
+        if let Some(entry) = self.tt.probe(key) {
             if entry.best_move != 0 {
                 tt_move = Some(entry.best_move);
             }
@@ -810,8 +806,6 @@ impl Search {
         };
 
         self.tt
-            .lock()
-            .unwrap()
             .store(key, best, depth, node_type, best_move);
 
         best
@@ -880,49 +874,54 @@ impl Search {
             return stand_pat;
         }
 
-        // Generate all moves to filter for noisy ones
-        let all_moves = self.board.generate_moves();
-
-        // Check for mate or stalemate (no legal moves)
-        if all_moves.is_empty() {
-            if self.is_in_check() {
-                return -MATE; // Checkmate
-            } else {
-                return 0; // Stalemate
-            }
-        }
-
         // If in check, we must search ALL evasions, not just noisy moves
         // This ensures we don't miss mate when all evasions are quiet moves
         let in_check = self.is_in_check();
 
-        // Filter moves to search:
-        // - If in check: search ALL evasions (critical to avoid missing mate!)
-        // - Otherwise: only noisy moves (captures, promotions, checks, castling)
+        // Generate moves based on check status:
+        // - If in check: generate ALL moves (evasions might be quiet)
+        // - Otherwise: only generate captures and promotions if optimizations enabled
         let moves_to_search = if in_check {
-            // In check: search all evasions
-            all_moves
-        } else {
-            // Not in check: filter only noisy moves
-            let mut noisy_moves = Vec::new();
-            for &mv in &all_moves {
-                let is_noisy = move_captured(mv).is_some()            // captures
-                    || move_flag(mv, FLAG_PROMOTION)                // promotions
-                    || move_flag(mv, FLAG_CASTLE_KING)               // castling
-                    || move_flag(mv, FLAG_CASTLE_QUEEN)              // castling
-                    || self.move_gives_check(mv); // gives check
-
-                if is_noisy {
-                    noisy_moves.push(mv);
+            // In check: must search all evasions
+            let all_moves = self.board.generate_moves();
+            
+            // Check for mate or stalemate (no legal moves)
+            if all_moves.is_empty() {
+                if self.is_in_check() {
+                    return -MATE; // Checkmate
+                } else {
+                    return 0; // Stalemate
                 }
             }
+            all_moves
+        } else {
+            if self.params.enable_qsearch_optimizations {
+                // Optimized path: generate only captures/promotions
+                let captures = self.board.generate_captures();
+                if captures.is_empty() {
+                    return stand_pat;
+                }
+                captures
+            } else {
+                // Slow path (Baseline): generate all moves and filter
+                let all_moves = self.board.generate_moves();
+                let mut noisy_moves = Vec::new();
+                for &mv in &all_moves {
+                     let is_noisy = move_captured(mv).is_some()            // captures
+                        || move_flag(mv, FLAG_PROMOTION)                // promotions
+                        || move_flag(mv, FLAG_CASTLE_KING)               // castling
+                        || move_flag(mv, FLAG_CASTLE_QUEEN)              // castling
+                        || self.move_gives_check(mv); // gives check
 
-            // If no noisy moves, return stand pat
-            if noisy_moves.is_empty() {
-                return stand_pat;
+                    if is_noisy {
+                        noisy_moves.push(mv);
+                    }
+                }
+                if noisy_moves.is_empty() {
+                    return stand_pat;
+                }
+                noisy_moves
             }
-
-            noisy_moves
         };
 
         // Order moves: use MVV-LVA for better pruning (captures first)
@@ -967,9 +966,32 @@ impl Search {
             }
         });
 
-        // Search moves (noisy moves or all evasions if in check)
+        // Search moves (captures or all evasions if in check)
         let mut best_score = stand_pat;
         for &mv in &moves_to_search {
+            // Delta pruning: skip captures that can't improve alpha even in best case
+            // Only apply when optimizations are enabled and not in check
+            if self.params.enable_qsearch_optimizations && !in_check {
+                // Get the value of the captured piece (if any)
+                let victim_value = if let Some(captured) = move_captured(mv) {
+                    self.piece_value(&captured)
+                } else if move_flag(mv, FLAG_PROMOTION) {
+                    // Promotion to queen adds ~800 cp
+                    800
+                } else {
+                    // Not a capture or promotion, shouldn't happen in qsearch
+                    0
+                };
+                
+                // Delta margin: even if we capture the piece and get a queen promotion,
+                // we still can't beat alpha. Skip this move.
+                const DELTA_MARGIN: i16 = 200; // Safety margin for positional compensation
+                if stand_pat + victim_value + DELTA_MARGIN < alpha {
+                    // This capture is futile, skip it
+                    continue;
+                }
+            }
+
             let undo = self.board.make_move(mv);
 
             // Recursive quiescence search with negated bounds
@@ -1128,7 +1150,8 @@ impl Search {
         // Try TT move first if available
         let key = self.board.recalc_zobrist();
         let mut tt_move = None;
-        if let Some(entry) = self.tt.lock().unwrap().probe(key).copied() {
+        // Probe TT
+        if let Some(entry) = self.tt.probe(key) {
             if entry.best_move != 0 {
                 tt_move = Some(entry.best_move);
                 self.stats.inc_tt_hit();
@@ -1700,7 +1723,7 @@ impl Search {
     /// Get statistics summary for debugging
     pub fn print_stats(&self) {
         self.stats.print_summary();
-        println!("TT Fill: {:.1}%", self.tt.lock().unwrap().fill_percentage());
+        println!("TT Fill: {:.1}%", self.tt.fill_percentage());
     }
 }
 

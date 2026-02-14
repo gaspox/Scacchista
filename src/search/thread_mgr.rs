@@ -26,7 +26,7 @@ pub struct ThreadManager {
     workers: Vec<thread::JoinHandle<()>>,
     num_threads: usize,
     stop_flag: Arc<AtomicBool>,
-    tt: Arc<Mutex<TranspositionTable>>,
+    tt: Arc<TranspositionTable>,
     /// Current job broadcasted to all workers (None = idle)
     current_job: Arc<Mutex<Option<SearchJob>>>,
     /// Signal that a new job is available
@@ -43,7 +43,7 @@ pub struct ThreadManager {
 impl ThreadManager {
     pub fn new(num_threads: usize, tt_mb: usize) -> Self {
         let stop_flag = Arc::new(AtomicBool::new(false));
-        let tt = Arc::new(Mutex::new(TranspositionTable::new(tt_mb)));
+        let tt = Arc::new(TranspositionTable::new(tt_mb));
         let current_job = Arc::new(Mutex::new(None));
         let job_available = Arc::new(AtomicBool::new(false));
         let job_stop_flag = Arc::new(AtomicBool::new(false));

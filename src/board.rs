@@ -1043,6 +1043,40 @@ impl Board {
         }
         legal
     }
+
+    /// Generate only captures and promotions (for quiescence search)
+    /// This is much faster than generate_moves() when we only need tactical moves
+    pub fn generate_captures(&mut self) -> Vec<Move> {
+        let mut pseudo: Vec<Move> = Vec::with_capacity(64);
+        self.generate_captures_pseudos(&mut pseudo);
+        let mut legal = Vec::with_capacity(pseudo.len());
+        for mv in pseudo {
+            let undo = self.make_move(mv);
+            let side_to_move = self.side;
+            let side_that_moved = if side_to_move == Color::White {
+                Color::Black
+            } else {
+                Color::White
+            };
+            let own_king_sq = self.king_sq(side_that_moved);
+            let is_attacked = self.is_square_attacked(own_king_sq, side_to_move);
+            if !is_attacked {
+                legal.push(mv);
+            }
+            self.unmake_move(undo);
+        }
+        legal
+    }
+
+    /// Generate pseudo-legal captures and promotions only
+    fn generate_captures_pseudos(&self, out: &mut Vec<Move>) {
+        self.generate_pawn_captures_pseudos(self.side, out);
+        self.generate_knight_captures_pseudos(self.side, out);
+        self.generate_bishop_captures_pseudos(self.side, out);
+        self.generate_rook_captures_pseudos(self.side, out);
+        self.generate_queen_captures_pseudos(self.side, out);
+        self.generate_king_captures_pseudos(self.side, out);
+    }
     pub fn generate_pseudo_moves(&self, out: &mut Vec<Move>) {
         self.generate_pawn_pseudos(self.side, out);
         self.generate_knight_pseudos(self.side, out);
@@ -1261,6 +1295,183 @@ impl Board {
         }
     }
 
+    /// Generate only pawn captures and promotions (for quiescence search)
+    fn generate_pawn_captures_pseudos(&self, side: Color, out: &mut Vec<Move>) {
+        let pawns = self.piece_bb(PieceKind::Pawn, side);
+        let empty = !self.occ;
+        let (prom_rank, enemy_occ, ep_target) = match side {
+            Color::White => (crate::utils::RANK_8, self.black_occ, self.ep),
+            Color::Black => (crate::utils::RANK_1, self.white_occ, self.ep),
+        };
+
+        // Normal captures (not on promotion rank)
+        let right_capture = match side {
+            Color::White => ((pawns & crate::utils::NOT_FILE_H) << 9) & enemy_occ & !prom_rank,
+            Color::Black => ((pawns & crate::utils::NOT_FILE_H) >> 7) & enemy_occ & !prom_rank,
+        };
+        let mut bb = right_capture;
+        while let Some(to) = crate::utils::pop_lsb(&mut bb) {
+            let from = match side {
+                Color::White => to - 9,
+                Color::Black => to + 7,
+            };
+            let captured_kind = self.piece_on(to).unwrap().0;
+            out.push(new_move(
+                from,
+                to,
+                PieceKind::Pawn,
+                Some(captured_kind),
+                None,
+                FLAG_CAPTURE,
+            ));
+        }
+
+        let left_capture = match side {
+            Color::White => ((pawns & crate::utils::NOT_FILE_A) << 7) & enemy_occ & !prom_rank,
+            Color::Black => ((pawns & crate::utils::NOT_FILE_A) >> 9) & enemy_occ & !prom_rank,
+        };
+        bb = left_capture;
+        while let Some(to) = crate::utils::pop_lsb(&mut bb) {
+            let from = match side {
+                Color::White => to - 7,
+                Color::Black => to + 9,
+            };
+            let captured_kind = self.piece_on(to).unwrap().0;
+            out.push(new_move(
+                from,
+                to,
+                PieceKind::Pawn,
+                Some(captured_kind),
+                None,
+                FLAG_CAPTURE,
+            ));
+        }
+
+        // En passant captures
+        if let Some(ep_sq) = ep_target {
+            let ep_sq = ep_sq as usize;
+            let ep_attackers = match side {
+                Color::White => {
+                    let mut attackers = 0u64;
+                    if ep_sq % 8 > 0 {
+                        attackers |= pawns & (1u64 << (ep_sq - 9));
+                    }
+                    if ep_sq % 8 < 7 {
+                        attackers |= pawns & (1u64 << (ep_sq - 7));
+                    }
+                    attackers
+                }
+                Color::Black => {
+                    let mut attackers = 0u64;
+                    if ep_sq % 8 > 0 {
+                        attackers |= pawns & (1u64 << (ep_sq + 7));
+                    }
+                    if ep_sq % 8 < 7 {
+                        attackers |= pawns & (1u64 << (ep_sq + 9));
+                    }
+                    attackers
+                }
+            };
+            let mut bb_ep = ep_attackers;
+            while let Some(from) = crate::utils::pop_lsb(&mut bb_ep) {
+                out.push(new_move(
+                    from,
+                    ep_sq,
+                    PieceKind::Pawn,
+                    Some(PieceKind::Pawn),
+                    None,
+                    FLAG_EN_PASSANT | FLAG_CAPTURE,
+                ));
+            }
+        }
+
+        // Promotions (both quiet and captures)
+        let push_dest = match side {
+            Color::White => (pawns << 8) & empty,
+            Color::Black => (pawns >> 8) & empty,
+        };
+        let promo_push_dest = push_dest & prom_rank;
+        bb = promo_push_dest;
+        while let Some(to) = crate::utils::pop_lsb(&mut bb) {
+            let from = match side {
+                Color::White => to - 8,
+                Color::Black => to + 8,
+            };
+            for kind in [
+                PieceKind::Queen,
+                PieceKind::Rook,
+                PieceKind::Bishop,
+                PieceKind::Knight,
+            ] {
+                out.push(new_move(
+                    from,
+                    to,
+                    PieceKind::Pawn,
+                    None,
+                    Some(kind),
+                    FLAG_PROMOTION,
+                ));
+            }
+        }
+
+        // Promotion captures
+        let promo_capture_right = match side {
+            Color::White => ((pawns & crate::utils::NOT_FILE_H) << 9) & enemy_occ & prom_rank,
+            Color::Black => ((pawns & crate::utils::NOT_FILE_H) >> 7) & enemy_occ & prom_rank,
+        };
+        bb = promo_capture_right;
+        while let Some(to) = crate::utils::pop_lsb(&mut bb) {
+            let from = match side {
+                Color::White => to - 9,
+                Color::Black => to + 7,
+            };
+            for kind in [
+                PieceKind::Queen,
+                PieceKind::Rook,
+                PieceKind::Bishop,
+                PieceKind::Knight,
+            ] {
+                let captured_kind = self.piece_on(to).unwrap().0;
+                out.push(new_move(
+                    from,
+                    to,
+                    PieceKind::Pawn,
+                    Some(captured_kind),
+                    Some(kind),
+                    FLAG_PROMOTION | FLAG_CAPTURE,
+                ));
+            }
+        }
+
+        let promo_capture_left = match side {
+            Color::White => ((pawns & crate::utils::NOT_FILE_A) << 7) & enemy_occ & prom_rank,
+            Color::Black => ((pawns & crate::utils::NOT_FILE_A) >> 9) & enemy_occ & prom_rank,
+        };
+        bb = promo_capture_left;
+        while let Some(to) = crate::utils::pop_lsb(&mut bb) {
+            let from = match side {
+                Color::White => to - 7,
+                Color::Black => to + 9,
+            };
+            for kind in [
+                PieceKind::Queen,
+                PieceKind::Rook,
+                PieceKind::Bishop,
+                PieceKind::Knight,
+            ] {
+                let captured_kind = self.piece_on(to).unwrap().0;
+                out.push(new_move(
+                    from,
+                    to,
+                    PieceKind::Pawn,
+                    Some(captured_kind),
+                    Some(kind),
+                    FLAG_PROMOTION | FLAG_CAPTURE,
+                ));
+            }
+        }
+    }
+
     fn generate_knight_pseudos(&self, side: Color, out: &mut Vec<Move>) {
         let knights = self.piece_bb(PieceKind::Knight, side);
         let mut bb = knights;
@@ -1277,6 +1488,32 @@ impl Board {
                     self.white_occ
                 }
             };
+            while let Some(to) = crate::utils::pop_lsb(&mut capture_bb) {
+                let piece_on_to = self.piece_on(to).unwrap().0;
+                out.push(new_move(
+                    from,
+                    to,
+                    PieceKind::Knight,
+                    Some(piece_on_to),
+                    None,
+                    FLAG_CAPTURE,
+                ));
+            }
+        }
+    }
+
+    /// Generate only knight captures (for quiescence search)
+    fn generate_knight_captures_pseudos(&self, side: Color, out: &mut Vec<Move>) {
+        let knights = self.piece_bb(PieceKind::Knight, side);
+        let enemy_occ = if side == Color::White {
+            self.black_occ
+        } else {
+            self.white_occ
+        };
+        let mut bb = knights;
+        while let Some(from) = crate::utils::pop_lsb(&mut bb) {
+            let attacks = crate::utils::knight_attacks(from);
+            let mut capture_bb = attacks & enemy_occ;
             while let Some(to) = crate::utils::pop_lsb(&mut capture_bb) {
                 let piece_on_to = self.piece_on(to).unwrap().0;
                 out.push(new_move(
@@ -1362,6 +1599,56 @@ impl Board {
         }
     }
 
+    /// Generate only bishop captures (for quiescence search)
+    fn generate_bishop_captures_pseudos(&self, side: Color, out: &mut Vec<Move>) {
+        let bishops = self.piece_bb(PieceKind::Bishop, side);
+        let enemy_occ = if side == Color::White {
+            self.black_occ
+        } else {
+            self.white_occ
+        };
+        let mut bb = bishops;
+        while let Some(from) = crate::utils::pop_lsb(&mut bb) {
+            let directions = [9i8, -9i8, 7i8, -7i8]; // NE, SW, NW, SE
+            for &dir in &directions {
+                let mut to = from as i8;
+                loop {
+                    to += dir;
+                    if to < 0 || to >= 64 {
+                        break;
+                    }
+                    let from_sq = to - dir;
+                    if from_sq < 0 || from_sq >= 64 {
+                        break;
+                    }
+                    let from_file = from_sq % 8;
+                    if (dir == 9 && from_file == 7) || (dir == -9 && from_file == 0) {
+                        break;
+                    }
+                    if (dir == 7 && from_file == 0) || (dir == -7 && from_file == 7) {
+                        break;
+                    }
+                    let to_usize = to as usize;
+                    if self.is_occupied(to_usize) {
+                        if ((1u64 << to) & enemy_occ) != 0 {
+                            if let Some((piece_kind, _)) = self.piece_on(to_usize) {
+                                out.push(new_move(
+                                    from,
+                                    to_usize,
+                                    PieceKind::Bishop,
+                                    Some(piece_kind),
+                                    None,
+                                    FLAG_CAPTURE,
+                                ));
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     fn generate_rook_pseudos(&self, side: Color, out: &mut Vec<Move>) {
         let rooks = self.piece_bb(PieceKind::Rook, side);
         let mut bb = rooks;
@@ -1428,6 +1715,56 @@ impl Board {
                         None,
                         FLAG_NONE,
                     ));
+                }
+            }
+        }
+    }
+
+    /// Generate only rook captures (for quiescence search)
+    fn generate_rook_captures_pseudos(&self, side: Color, out: &mut Vec<Move>) {
+        let rooks = self.piece_bb(PieceKind::Rook, side);
+        let enemy_occ = if side == Color::White {
+            self.black_occ
+        } else {
+            self.white_occ
+        };
+        let mut bb = rooks;
+        while let Some(from) = crate::utils::pop_lsb(&mut bb) {
+            let directions = [8i8, -8i8, 1i8, -1i8]; // North, South, East, West
+            for &dir in &directions {
+                let mut to = from as i8;
+                loop {
+                    to += dir;
+                    if to < 0 || to >= 64 {
+                        break;
+                    }
+                    if dir == 1 {
+                        let from_sq = to - dir;
+                        if from_sq >= 0 && (from_sq % 8) == 7 {
+                            break;
+                        }
+                    } else if dir == -1 {
+                        let from_sq = to - dir;
+                        if from_sq >= 0 && (from_sq % 8) == 0 {
+                            break;
+                        }
+                    }
+                    let to_usize = to as usize;
+                    if self.is_occupied(to_usize) {
+                        if ((1u64 << to) & enemy_occ) != 0 {
+                            if let Some((piece_kind, _)) = self.piece_on(to_usize) {
+                                out.push(new_move(
+                                    from,
+                                    to_usize,
+                                    PieceKind::Rook,
+                                    Some(piece_kind),
+                                    None,
+                                    FLAG_CAPTURE,
+                                ));
+                            }
+                        }
+                        break;
+                    }
                 }
             }
         }
@@ -1531,6 +1868,83 @@ impl Board {
         }
     }
 
+    /// Generate only queen captures (for quiescence search)
+    fn generate_queen_captures_pseudos(&self, side: Color, out: &mut Vec<Move>) {
+        let queens = self.piece_bb(PieceKind::Queen, side);
+        let enemy_occ = if side == Color::White {
+            self.black_occ
+        } else {
+            self.white_occ
+        };
+        let mut bb = queens;
+        while let Some(from) = crate::utils::pop_lsb(&mut bb) {
+            let directions = [8i8, -8i8, 1i8, -1i8, 9i8, -9i8, 7i8, -7i8];
+            for &dir in &directions {
+                let mut to = from as i8;
+                loop {
+                    to += dir;
+                    if to < 0 || to >= 64 {
+                        break;
+                    }
+                    let from_sq = to - dir;
+                    if from_sq < 0 || from_sq >= 64 {
+                        break;
+                    }
+                    let from_file = from_sq % 8;
+                    match dir {
+                        1 => {
+                            if from_file == 7 {
+                                break;
+                            }
+                        }
+                        -1 => {
+                            if from_file == 0 {
+                                break;
+                            }
+                        }
+                        9 => {
+                            if from_file == 7 {
+                                break;
+                            }
+                        }
+                        -9 => {
+                            if from_file == 0 {
+                                break;
+                            }
+                        }
+                        7 => {
+                            if from_file == 0 {
+                                break;
+                            }
+                        }
+                        -7 => {
+                            if from_file == 7 {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                    let to_usize = to as usize;
+                    if self.is_occupied(to_usize) {
+                        if ((1u64 << to) & enemy_occ) != 0 {
+                            if let Some((piece_kind, _)) = self.piece_on(to_usize) {
+                                out.push(new_move(
+                                    from,
+                                    to_usize,
+                                    PieceKind::Queen,
+                                    Some(piece_kind),
+                                    None,
+                                    FLAG_CAPTURE,
+                                ));
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     fn generate_king_pseudos(&self, side: Color, out: &mut Vec<Move>) {
         let kings = self.piece_bb(PieceKind::King, side);
         let mut bb = kings;
@@ -1566,6 +1980,33 @@ impl Board {
 
             // Castling moves
             self.generate_castling_moves(side, from, out);
+        }
+    }
+
+    /// Generate only king captures (for quiescence search)
+    fn generate_king_captures_pseudos(&self, side: Color, out: &mut Vec<Move>) {
+        let kings = self.piece_bb(PieceKind::King, side);
+        let enemy_occ = if side == Color::White {
+            self.black_occ
+        } else {
+            self.white_occ
+        };
+        let mut bb = kings;
+        while let Some(from) = crate::utils::pop_lsb(&mut bb) {
+            let attacks = crate::utils::king_attacks(from);
+            let mut capture_bb = attacks & enemy_occ;
+            while let Some(to) = crate::utils::pop_lsb(&mut capture_bb) {
+                if let Some((piece_kind, _)) = self.piece_on(to) {
+                    out.push(new_move(
+                        from,
+                        to,
+                        PieceKind::King,
+                        Some(piece_kind),
+                        None,
+                        FLAG_CAPTURE,
+                    ));
+                }
+            }
         }
     }
 

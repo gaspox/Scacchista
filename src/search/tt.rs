@@ -1,8 +1,7 @@
-//! Transposition Table for Scacchista
-//!
-//! Simple fixed-size transposition table using a single entry per index
+//! Lock-free transposition table using atomic operations for wait-free access
 
 use crate::board::Move;
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 
 /// Node type for transposition table entries
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +56,53 @@ impl TTEntry {
         }
     }
 
+    /// Pack entry into a single u64 for atomic storage
+    /// Format: [16:key_low] [16:score] [16:move] [6:depth] [8:age] [2:type]
+    /// Note: We only store lower 16 bits of key for verification (hash collision rate ~1/65536)
+    /// Depth is limited to 6 bits (max 63), which is sufficient for chess search
+    fn pack(&self) -> u64 {
+        let key_low = (self.key & 0xFFFF) as u64;
+        let score = (self.score as u16) as u64;
+        let best_move = (self.best_move & 0xFFFF) as u64;
+        let depth = (self.depth & 0x3F) as u64;  // 6 bits
+        let age = self.age as u64;  // 8 bits
+        let node_type = self.node_type as u64;  // 2 bits
+
+        (key_low << 48)
+            | (score << 32)
+            | (best_move << 16)
+            | (depth << 10)
+            | (age << 2)
+            | node_type
+    }
+
+    /// Unpack entry from u64
+    /// Returns the full key (passed as parameter) and other fields from packed data
+    fn unpack(key: u64, packed: u64) -> Self {
+        let key_low = (packed >> 48) & 0xFFFF;
+        let score = ((packed >> 32) & 0xFFFF) as u16 as i16;
+        let best_move = ((packed >> 16) & 0xFFFF) as u32;
+        let depth = ((packed >> 10) & 0x3F) as u8;  // 6 bits
+        let age = ((packed >> 2) & 0xFF) as u8;  // 8 bits
+        let node_type_val = (packed & 0x3) as u8;  // 2 bits
+
+        let node_type = match node_type_val {
+            0 => NodeType::Exact,
+            1 => NodeType::LowerBound,
+            2 => NodeType::UpperBound,
+            _ => NodeType::Exact,
+        };
+
+        Self {
+            key,  // Use full key as-is (for the interface)
+            score,
+            depth,
+            node_type,
+            best_move,
+            age,
+        }
+    }
+
     /// Return bounds for alpha-beta usage
     pub fn bound(&self) -> (i16, i16) {
         match self.node_type {
@@ -67,17 +113,17 @@ impl TTEntry {
     }
 }
 
-/// Transposition table: single-probe direct-mapped table
+/// Lock-free Transposition table using atomic operations
 pub struct TranspositionTable {
-    entries: Vec<TTEntry>,
+    entries: Vec<AtomicU64>,
     mask: u64,
-    age: u8,
+    age: AtomicU8,
 }
 
 impl TranspositionTable {
     /// Create a TT with approximately `size_mb` megabytes
     pub fn new(size_mb: usize) -> Self {
-        let entry_size = std::mem::size_of::<TTEntry>();
+        let entry_size = std::mem::size_of::<AtomicU64>();
         let mut entries = (size_mb * 1024 * 1024) / entry_size;
         if entries == 0 {
             entries = 1024;
@@ -85,19 +131,38 @@ impl TranspositionTable {
         let actual = entries.next_power_of_two();
         let final_entries = actual.max(1024);
         let mask = (final_entries - 1) as u64;
+
+        let entries: Vec<AtomicU64> = (0..final_entries)
+            .map(|_| AtomicU64::new(0))
+            .collect();
+
         Self {
-            entries: vec![TTEntry::empty(); final_entries],
+            entries,
             mask,
-            age: 0,
+            age: AtomicU8::new(0),
         }
     }
 
-    /// Probe returns a reference to an entry if the stored key matches and entry is recent enough
-    pub fn probe(&self, key: u64) -> Option<&TTEntry> {
+    /// Probe returns an entry if the stored key matches and entry is recent enough
+    /// Uses relaxed ordering for performance (TT is inherently racy)
+    /// Note: Uses 16-bit hash verification for key matching (collision rate ~1/65536)
+    pub fn probe(&self, key: u64) -> Option<TTEntry> {
         let index = (key & self.mask) as usize;
-        let e = &self.entries[index];
-        if e.key == key && self.age.wrapping_sub(e.age) < 8 {
-            Some(e)
+        let packed = self.entries[index].load(Ordering::Relaxed);
+
+        if packed == 0 {
+            return None;
+        }
+
+        let entry = TTEntry::unpack(key, packed);
+        let current_age = self.age.load(Ordering::Relaxed);
+
+        // Verify 16-bit hash match (stored in upper 16 bits of packed)
+        let stored_key_low = (packed >> 48) & 0xFFFF;
+        let query_key_low = key & 0xFFFF;
+
+        if stored_key_low == query_key_low && current_age.wrapping_sub(entry.age) < 8 {
+            Some(entry)
         } else {
             None
         }
@@ -107,42 +172,50 @@ impl TranspositionTable {
     ///
     /// Replacement priorities:
     /// 1. Empty slots: always replace
-    /// 2. Old entries: replace if age difference >= 2 (more aggressive aging)
+    /// 2. Old entries: replace if age difference >= 2
     /// 3. Exact scores: replace at same depth if new entry is Exact
     /// 4. Deeper searches: always replace shallow with deeper
-    pub fn store(&mut self, key: u64, score: i16, depth: u8, node_type: NodeType, best_move: Move) {
+    pub fn store(&self, key: u64, score: i16, depth: u8, node_type: NodeType, best_move: Move) {
         let index = (key & self.mask) as usize;
-        let existing = &self.entries[index];
+        let packed = self.entries[index].load(Ordering::Relaxed);
+        let current_age = self.age.load(Ordering::Relaxed);
 
-        // Improved replacement scheme: balance freshness, depth, and node quality
-        let replace = existing.is_empty()
-            // More aggressive aging: replace if entry is 2+ searches old
-            || (self.age != existing.age && self.age.wrapping_sub(existing.age) >= 2)
-            // Prefer exact scores even at same depth
-            || (depth >= existing.depth && node_type == NodeType::Exact)
-            // Always replace with deeper search
-            || depth > existing.depth;
+        // Check replacement policy
+        let replace = if packed == 0 {
+            true // Empty slot
+        } else {
+            let existing = TTEntry::unpack(key, packed);
+            existing.is_empty()
+                || (current_age != existing.age && current_age.wrapping_sub(existing.age) >= 2)
+                || (depth >= existing.depth && node_type == NodeType::Exact)
+                || depth > existing.depth
+        };
 
         if replace {
-            self.entries[index] = TTEntry::new(key, score, depth, node_type, best_move, self.age);
+            let new_entry = TTEntry::new(key, score, depth, node_type, best_move, current_age);
+            self.entries[index].store(new_entry.pack(), Ordering::Relaxed);
         }
     }
 
     /// Increment search age (call at start of each new root search)
-    pub fn new_search(&mut self) {
-        self.age = self.age.wrapping_add(1);
+    pub fn new_search(&self) {
+        self.age.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn fill_percentage(&self) -> f64 {
-        let filled = self.entries.iter().filter(|e| !e.is_empty()).count();
+        let filled = self
+            .entries
+            .iter()
+            .filter(|e| e.load(Ordering::Relaxed) != 0)
+            .count();
         (filled as f64 / self.entries.len() as f64) * 100.0
     }
 
-    pub fn clear(&mut self) {
-        for e in &mut self.entries {
-            *e = TTEntry::empty();
+    pub fn clear(&self) {
+        for e in &self.entries {
+            e.store(0, Ordering::Relaxed);
         }
-        self.age = 0;
+        self.age.store(0, Ordering::Relaxed);
     }
 
     pub fn size(&self) -> usize {
@@ -167,7 +240,7 @@ mod tests {
         let mut tt = TranspositionTable::new(1); // Small TT for testing
 
         // Set age to 254
-        tt.age = 254;
+        tt.age.store(254, Ordering::Relaxed);
 
         // Store an entry at age 254
         tt.store(0x1234, 100, 5, NodeType::Exact, 0x1111);
@@ -179,7 +252,7 @@ mod tests {
 
         // Advance to age 255
         tt.new_search();
-        assert_eq!(tt.age, 255);
+        assert_eq!(tt.age.load(Ordering::Relaxed), 255);
 
         // Try to store with same depth and Exact - WILL replace due to Exact priority
         // (even though age diff = 1, the condition "depth >= existing.depth && node_type == Exact" triggers)
@@ -193,7 +266,7 @@ mod tests {
 
         // Advance again (wraps to 0)
         tt.new_search();
-        assert_eq!(tt.age, 0);
+        assert_eq!(tt.age.load(Ordering::Relaxed), 0);
 
         // Now age diff is 0 - 255 = wrapping_sub = 1, still < 2
         // Store a NON-exact entry with shallow depth - should NOT replace
@@ -207,7 +280,7 @@ mod tests {
 
         // Advance again (age = 1)
         tt.new_search();
-        assert_eq!(tt.age, 1);
+        assert_eq!(tt.age.load(Ordering::Relaxed), 1);
 
         // Now age diff is 1 - 255 = wrapping_sub = 2, >= 2!
         // Should replace even with same depth
