@@ -102,8 +102,8 @@ impl UciEngine {
             UciCommand::Go {
                 wtime,
                 btime,
-                winc,  // FIX Bug #4
-                binc,  // FIX Bug #4
+                winc, // FIX Bug #4
+                binc, // FIX Bug #4
                 movetime,
                 depth,
                 nodes: _nodes,
@@ -118,9 +118,10 @@ impl UciEngine {
                     &crate::search::params::TimeManagement::new(),
                     wtime,
                     btime,
-                    winc,     // FIX Bug #4: Pass increment
-                    binc,     // FIX Bug #4: Pass increment
+                    winc, // FIX Bug #4: Pass increment
+                    binc, // FIX Bug #4: Pass increment
                     movetime,
+                    _movestogo.map(|x| x as u64),
                     side_white,
                 );
 
@@ -160,7 +161,7 @@ impl UciEngine {
                         && wtime.is_none()
                         && btime.is_none()
                     {
-                        0  // 0 = no time limit, depth controls search
+                        0 // 0 = no time limit, depth controls search
                     } else {
                         time_alloc
                     };
@@ -181,7 +182,7 @@ impl UciEngine {
                         let search_time_ms = search_start.elapsed().as_millis() as u64;
                         res.push(format!(
                             "info depth {} score cp {} time {}",
-                            completed_depth,  // FIX Bug #3: Use actual completed depth
+                            completed_depth, // FIX Bug #3: Use actual completed depth
                             score,
                             search_time_ms
                         ));

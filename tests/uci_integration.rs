@@ -57,18 +57,33 @@ fn test_go_depth_only() {
     let responses = process_uci_line("go depth 6", &mut engine);
 
     // Should get info line and bestmove
-    assert!(responses.len() >= 2, "Expected at least 2 responses (info + bestmove)");
+    assert!(
+        responses.len() >= 2,
+        "Expected at least 2 responses (info + bestmove)"
+    );
 
     // Extract depth from info line
-    let info_line = responses.iter().find(|s| s.starts_with("info depth")).expect("No info depth line");
+    let info_line = responses
+        .iter()
+        .find(|s| s.starts_with("info depth"))
+        .expect("No info depth line");
 
     // The info line should report depth 6 (or the actual depth reached)
     // Format: "info depth 6 score cp X time Y"
-    assert!(info_line.contains("depth"), "Info line should contain depth");
+    assert!(
+        info_line.contains("depth"),
+        "Info line should contain depth"
+    );
 
     // Should have a bestmove (not 0000)
-    let bestmove_line = responses.iter().find(|s| s.starts_with("bestmove")).expect("No bestmove");
-    assert!(!bestmove_line.contains("0000"), "Bestmove should not be null move");
+    let bestmove_line = responses
+        .iter()
+        .find(|s| s.starts_with("bestmove"))
+        .expect("No bestmove");
+    assert!(
+        !bestmove_line.contains("0000"),
+        "Bestmove should not be null move"
+    );
 }
 
 #[test]
@@ -90,7 +105,11 @@ fn test_go_depth_with_time() {
     let elapsed = start.elapsed().as_millis();
 
     // Should complete in roughly 100ms (give it 500ms tolerance for slow systems)
-    assert!(elapsed < 500, "Search should stop due to movetime, not depth. Took {}ms", elapsed);
+    assert!(
+        elapsed < 500,
+        "Search should stop due to movetime, not depth. Took {}ms",
+        elapsed
+    );
 
     // Should still get a valid bestmove
     assert!(responses.iter().any(|s| s.starts_with("bestmove")));

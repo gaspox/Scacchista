@@ -18,8 +18,8 @@ pub enum UciCommand {
     Go {
         wtime: Option<u64>,
         btime: Option<u64>,
-        winc: Option<u64>,   // FIX Bug #4: Add white increment
-        binc: Option<u64>,   // FIX Bug #4: Add black increment
+        winc: Option<u64>, // FIX Bug #4: Add white increment
+        binc: Option<u64>, // FIX Bug #4: Add black increment
         movetime: Option<u64>,
         depth: Option<u8>,
         nodes: Option<u64>,
@@ -110,8 +110,8 @@ pub fn parse_uci_command(line: &str) -> UciCommand {
         "go" => {
             let mut wtime: Option<u64> = None;
             let mut btime: Option<u64> = None;
-            let mut winc: Option<u64> = None;   // FIX Bug #4
-            let mut binc: Option<u64> = None;   // FIX Bug #4
+            let mut winc: Option<u64> = None; // FIX Bug #4
+            let mut binc: Option<u64> = None; // FIX Bug #4
             let mut movetime: Option<u64> = None;
             let mut depth: Option<u8> = None;
             let mut nodes: Option<u64> = None;
@@ -139,7 +139,8 @@ pub fn parse_uci_command(line: &str) -> UciCommand {
                         }
                         i += 2;
                     }
-                    "winc" => {  // FIX Bug #4: Parse white increment
+                    "winc" => {
+                        // FIX Bug #4: Parse white increment
                         if let Some(v) = parts.get(i + 1) {
                             if let Ok(x) = v.parse::<u64>() {
                                 winc = Some(x);
@@ -147,7 +148,8 @@ pub fn parse_uci_command(line: &str) -> UciCommand {
                         }
                         i += 2;
                     }
-                    "binc" => {  // FIX Bug #4: Parse black increment
+                    "binc" => {
+                        // FIX Bug #4: Parse black increment
                         if let Some(v) = parts.get(i + 1) {
                             if let Ok(x) = v.parse::<u64>() {
                                 binc = Some(x);
@@ -212,8 +214,8 @@ pub fn parse_uci_command(line: &str) -> UciCommand {
             UciCommand::Go {
                 wtime,
                 btime,
-                winc,  // FIX Bug #4
-                binc,  // FIX Bug #4
+                winc, // FIX Bug #4
+                binc, // FIX Bug #4
                 movetime,
                 depth,
                 nodes,

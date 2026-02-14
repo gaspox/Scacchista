@@ -1096,8 +1096,8 @@ impl Board {
         }
         // Captures (normal, not including ep which is handled separately)
         let right_capture = match side {
-            Color::White => ((pawns & crate::utils::NOT_FILE_H) << 9) & enemy_occ,
-            Color::Black => ((pawns & crate::utils::NOT_FILE_H) >> 7) & enemy_occ,
+            Color::White => ((pawns & crate::utils::NOT_FILE_H) << 9) & enemy_occ & !prom_rank,
+            Color::Black => ((pawns & crate::utils::NOT_FILE_H) >> 7) & enemy_occ & !prom_rank,
         };
         bb = right_capture;
         while let Some(to) = crate::utils::pop_lsb(&mut bb) {
@@ -1116,8 +1116,8 @@ impl Board {
             ));
         }
         let left_capture = match side {
-            Color::White => ((pawns & crate::utils::NOT_FILE_A) << 7) & enemy_occ,
-            Color::Black => ((pawns & crate::utils::NOT_FILE_A) >> 9) & enemy_occ,
+            Color::White => ((pawns & crate::utils::NOT_FILE_A) << 7) & enemy_occ & !prom_rank,
+            Color::Black => ((pawns & crate::utils::NOT_FILE_A) >> 9) & enemy_occ & !prom_rank,
         };
         bb = left_capture;
         while let Some(to) = crate::utils::pop_lsb(&mut bb) {

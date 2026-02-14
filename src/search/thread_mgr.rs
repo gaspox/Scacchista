@@ -75,7 +75,9 @@ impl ThreadManager {
 
                     // Get current job (if any)
                     let job = {
-                        let guard = job_clone.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                        let guard = job_clone
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
                         guard.clone()
                     };
 
@@ -92,7 +94,9 @@ impl ThreadManager {
 
                         // FIX Bug #3: Store result including completed depth
                         {
-                            let mut results_guard = results_clone.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                            let mut results_guard = results_clone
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner());
                             let completed_depth = search.stats().completed_depth;
                             results_guard[worker_id] = Some((mv, score, completed_depth));
                         }
@@ -133,7 +137,10 @@ impl ThreadManager {
         self.workers_done.store(0, Ordering::Release);
         self.job_stop_flag.store(false, Ordering::Release);
         {
-            let mut results_guard = self.results.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut results_guard = self
+                .results
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             for r in results_guard.iter_mut() {
                 *r = None;
             }
@@ -141,7 +148,10 @@ impl ThreadManager {
 
         // Set current job (broadcast to all workers)
         {
-            let mut job_guard = self.current_job.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut job_guard = self
+                .current_job
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             *job_guard = Some(job);
         }
 
@@ -182,7 +192,10 @@ impl ThreadManager {
         // Clear job (stop workers)
         self.job_available.store(false, Ordering::Release);
         {
-            let mut job_guard = self.current_job.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut job_guard = self
+                .current_job
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             *job_guard = None;
         }
 
@@ -210,7 +223,10 @@ impl ThreadManager {
         self.workers_done.store(0, Ordering::Release);
         self.job_stop_flag.store(false, Ordering::Release);
         {
-            let mut results_guard = self.results.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut results_guard = self
+                .results
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             for r in results_guard.iter_mut() {
                 *r = None;
             }
@@ -218,7 +234,10 @@ impl ThreadManager {
 
         // Set current job (broadcast to all workers)
         {
-            let mut job_guard = self.current_job.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut job_guard = self
+                .current_job
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             *job_guard = Some(job);
         }
 
@@ -247,7 +266,10 @@ impl ThreadManager {
         // Collect best result
         // FIX Bug #3: Include completed depth in result
         let best_result = {
-            let results_guard = self.results.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let results_guard = self
+                .results
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             results_guard
                 .iter()
                 .filter_map(|r| *r)
