@@ -64,16 +64,11 @@ impl TTEntry {
         let key_low = (self.key & 0xFFFF) as u64;
         let score = (self.score as u16) as u64;
         let best_move = (self.best_move & 0xFFFF) as u64;
-        let depth = (self.depth & 0x3F) as u64;  // 6 bits
-        let age = self.age as u64;  // 8 bits
-        let node_type = self.node_type as u64;  // 2 bits
+        let depth = (self.depth & 0x3F) as u64; // 6 bits
+        let age = self.age as u64; // 8 bits
+        let node_type = self.node_type as u64; // 2 bits
 
-        (key_low << 48)
-            | (score << 32)
-            | (best_move << 16)
-            | (depth << 10)
-            | (age << 2)
-            | node_type
+        (key_low << 48) | (score << 32) | (best_move << 16) | (depth << 10) | (age << 2) | node_type
     }
 
     /// Unpack entry from u64
@@ -82,9 +77,9 @@ impl TTEntry {
         let key_low = (packed >> 48) & 0xFFFF;
         let score = ((packed >> 32) & 0xFFFF) as u16 as i16;
         let best_move = ((packed >> 16) & 0xFFFF) as u32;
-        let depth = ((packed >> 10) & 0x3F) as u8;  // 6 bits
-        let age = ((packed >> 2) & 0xFF) as u8;  // 8 bits
-        let node_type_val = (packed & 0x3) as u8;  // 2 bits
+        let depth = ((packed >> 10) & 0x3F) as u8; // 6 bits
+        let age = ((packed >> 2) & 0xFF) as u8; // 8 bits
+        let node_type_val = (packed & 0x3) as u8; // 2 bits
 
         let node_type = match node_type_val {
             0 => NodeType::Exact,
@@ -94,7 +89,7 @@ impl TTEntry {
         };
 
         Self {
-            key,  // Use full key as-is (for the interface)
+            key, // Use full key as-is (for the interface)
             score,
             depth,
             node_type,
@@ -132,9 +127,7 @@ impl TranspositionTable {
         let final_entries = actual.max(1024);
         let mask = (final_entries - 1) as u64;
 
-        let entries: Vec<AtomicU64> = (0..final_entries)
-            .map(|_| AtomicU64::new(0))
-            .collect();
+        let entries: Vec<AtomicU64> = (0..final_entries).map(|_| AtomicU64::new(0)).collect();
 
         Self {
             entries,

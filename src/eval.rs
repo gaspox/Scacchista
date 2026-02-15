@@ -472,16 +472,16 @@ fn development_penalty(board: &Board, color: Color) -> i16 {
 /// # Returns
 /// Material balance in centipawns from the side-to-move perspective
 fn quick_material_count(board: &Board) -> i16 {
-    let white_material: i32 =
-        board.piece_bb(PieceKind::Pawn, Color::White).count_ones() as i32 * PAWN_VALUE as i32
+    let white_material: i32 = board.piece_bb(PieceKind::Pawn, Color::White).count_ones() as i32
+        * PAWN_VALUE as i32
         + board.piece_bb(PieceKind::Knight, Color::White).count_ones() as i32 * KNIGHT_VALUE as i32
         + board.piece_bb(PieceKind::Bishop, Color::White).count_ones() as i32 * BISHOP_VALUE as i32
         + board.piece_bb(PieceKind::Rook, Color::White).count_ones() as i32 * ROOK_VALUE as i32
         + board.piece_bb(PieceKind::Queen, Color::White).count_ones() as i32 * QUEEN_VALUE as i32
         + board.piece_bb(PieceKind::King, Color::White).count_ones() as i32 * KING_VALUE as i32;
 
-    let black_material: i32 =
-        board.piece_bb(PieceKind::Pawn, Color::Black).count_ones() as i32 * PAWN_VALUE as i32
+    let black_material: i32 = board.piece_bb(PieceKind::Pawn, Color::Black).count_ones() as i32
+        * PAWN_VALUE as i32
         + board.piece_bb(PieceKind::Knight, Color::Black).count_ones() as i32 * KNIGHT_VALUE as i32
         + board.piece_bb(PieceKind::Bishop, Color::Black).count_ones() as i32 * BISHOP_VALUE as i32
         + board.piece_bb(PieceKind::Rook, Color::Black).count_ones() as i32 * ROOK_VALUE as i32
@@ -1067,16 +1067,17 @@ mod tests {
         );
     }
 
-
     #[test]
     fn test_evaluate_fast_bitboard_vs_naive() {
         // Create a board with various pieces
         // FEN: r3k2r/pppb1ppp/2n1pn2/3q4/3P4/2B1PN2/PP3PPP/R2QKB1R w KQkq - 1 9
         let mut board = Board::new();
-        board.set_from_fen("r3k2r/pppb1ppp/2n1pn2/3q4/3P4/2B1PN2/PP3PPP/R2QKB1R w KQkq - 1 9").unwrap();
-        
+        board
+            .set_from_fen("r3k2r/pppb1ppp/2n1pn2/3q4/3P4/2B1PN2/PP3PPP/R2QKB1R w KQkq - 1 9")
+            .unwrap();
+
         let fast_eval = evaluate_fast(&board);
-        
+
         // Naive implementation for comparison
         let mut naive_white_score: i32 = 0;
         let mut naive_black_score: i32 = 0;
@@ -1091,7 +1092,7 @@ mod tests {
                     PieceKind::Queen => QUEEN_VALUE,
                     PieceKind::King => KING_VALUE,
                 };
-                
+
                 let psqt_idx = if color == Color::White { sq } else { sq ^ 56 };
                 let psqt = match kind {
                     PieceKind::Pawn => PAWN_PSQT[psqt_idx],
@@ -1101,7 +1102,7 @@ mod tests {
                     PieceKind::Queen => QUEEN_PSQT[psqt_idx],
                     PieceKind::King => KING_PSQT[psqt_idx],
                 };
-                
+
                 let term = val as i32 + psqt as i32;
                 match color {
                     Color::White => naive_white_score += term,
@@ -1109,23 +1110,32 @@ mod tests {
                 }
             }
         }
-        
+
         // Add king safety critical (which is also called in evaluate_fast)
         naive_white_score += king_safety_critical_only(&board, Color::White) as i32;
         naive_black_score += king_safety_critical_only(&board, Color::Black) as i32;
-        
+
         let relative = (naive_white_score - naive_black_score) as i16;
-        let expected = if board.side == Color::Black { -relative } else { relative };
-        
-        assert_eq!(fast_eval, expected, "Bitboard evaluate_fast mismatch with naive iteration");
+        let expected = if board.side == Color::Black {
+            -relative
+        } else {
+            relative
+        };
+
+        assert_eq!(
+            fast_eval, expected,
+            "Bitboard evaluate_fast mismatch with naive iteration"
+        );
     }
 
     #[test]
     fn test_quick_material_count_vs_naive() {
         let mut board = Board::new();
-        board.set_from_fen("r3k2r/pppb1ppp/2n1pn2/3q4/3P4/2B1PN2/PP3PPP/R2QKB1R w KQkq - 1 9").unwrap();
+        board
+            .set_from_fen("r3k2r/pppb1ppp/2n1pn2/3q4/3P4/2B1PN2/PP3PPP/R2QKB1R w KQkq - 1 9")
+            .unwrap();
         let fast_count = quick_material_count(&board);
-        
+
         let mut white_mat: i32 = 0;
         let mut black_mat: i32 = 0;
         for sq in 0..64 {
@@ -1138,13 +1148,24 @@ mod tests {
                     PieceKind::Queen => QUEEN_VALUE,
                     PieceKind::King => KING_VALUE,
                 };
-                if color == Color::White { white_mat += val as i32; } else { black_mat += val as i32; }
+                if color == Color::White {
+                    white_mat += val as i32;
+                } else {
+                    black_mat += val as i32;
+                }
             }
         }
-        
+
         let rel = (white_mat - black_mat) as i16;
-        let expected = if board.side == Color::Black { -rel } else { rel };
-        
-        assert_eq!(fast_count, expected, "Bitboard quick_material_count mismatch");
+        let expected = if board.side == Color::Black {
+            -rel
+        } else {
+            rel
+        };
+
+        assert_eq!(
+            fast_count, expected,
+            "Bitboard quick_material_count mismatch"
+        );
     }
 }

@@ -1,16 +1,17 @@
-
 use scacchista::board::Board;
-use scacchista::search::search::Search;
 use scacchista::search::params::SearchParams;
+use scacchista::search::search::Search;
 use std::time::Instant;
 
 #[test]
 fn benchmark_optimization_impact() {
     let mut board = Board::new();
-    board.set_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap();
+    board
+        .set_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+        .unwrap();
 
     let depth = 9;
-    
+
     // 1. Run Baseline (No Optimizations)
     let mut params_base = SearchParams::new();
     params_base.max_depth = depth;
@@ -24,7 +25,7 @@ fn benchmark_optimization_impact() {
     let duration_base = start_base.elapsed();
     let nodes_base = search_base.stats().nodes;
     let nps_base = nodes_base as f64 / duration_base.as_secs_f64();
-    
+
     println!("BASELINE:");
     println!("  Time: {:.4}s", duration_base.as_secs_f64());
     println!("  Nodes: {}", nodes_base);
@@ -53,7 +54,10 @@ fn benchmark_optimization_impact() {
     let speedup = (nps_opt - nps_base) / nps_base * 100.0;
     println!("\nRESULTS:");
     println!("  Speedup: {:.2}%", speedup);
-    println!("  Time Reduction: {:.2}%", (1.0 - duration_opt.as_secs_f64() / duration_base.as_secs_f64()) * 100.0);
-    
+    println!(
+        "  Time Reduction: {:.2}%",
+        (1.0 - duration_opt.as_secs_f64() / duration_base.as_secs_f64()) * 100.0
+    );
+
     assert!(nps_opt > nps_base, "Optimized version should be faster");
 }

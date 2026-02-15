@@ -17,7 +17,7 @@ use std::sync::{
 };
 
 /// Search engine configurations
-pub const INFINITE: i16 = 30000;
+pub const INFINITE: i16 = 32000;
 pub const MATE: i16 = 30001;
 pub const MATE_THRESHOLD: i16 = 29999;
 
@@ -271,6 +271,9 @@ impl Search {
         }
 
         self.stats.update_timing();
+        if best_score == -INFINITE {
+            best_score = self.static_eval();
+        }
         (best_move, best_score)
     }
 
@@ -341,6 +344,9 @@ impl Search {
 
         self.params.time_limit_ms = orig_time_limit;
         self.stats.update_timing();
+        if best_score == -INFINITE {
+            best_score = self.static_eval();
+        }
         (best_move, best_score)
     }
 
@@ -350,70 +356,79 @@ impl Search {
         let mut best_root_move = best_move;
         let mut best_score = -INFINITE;
         let root_moves = self.generate_root_moves();
-        
+
+        // FIX: Handle no legal root moves (Checkmate or Stalemate)
+        if root_moves.is_empty() {
+            if self.is_in_check() {
+                return (0, -MATE);
+            } else {
+                return (0, 0); // Stalemate
+            }
+        }
+
         // DEBUG
         // eprintln!("IDDFS depth={} alpha={} beta={} num_moves={}", depth, alpha, beta, root_moves.len());
 
         let num_root_moves = root_moves.len();
-    for (i, mv) in root_moves.into_iter().enumerate() {
-        // Increment node count for root moves
-        self.stats.inc_node();
-        self.stats.inc_root_node();
+        for (i, mv) in root_moves.into_iter().enumerate() {
+            // Increment node count for root moves
+            self.stats.inc_node();
+            self.stats.inc_root_node();
 
-        let undo = self.board.make_move(mv);
-        
-        // PVS: First move with full window, rest with null-window + re-search
-        let score = if i == 0 {
-            // First move (expected PV): full window search
-            -self.negamax_pv(depth - 1, -beta, -alpha, 0)
-        } else {
-            // Non-PV moves: null-window search
-            let null_score = -self.negamax_pv(depth - 1, -alpha - 1, -alpha, 0);
-            
-            // If null-window fails high and is not a beta cutoff, re-search with full window
-            if null_score > alpha && null_score < beta {
-                // Re-search with full window
-                -self.negamax_pv(depth - 1, -beta, -alpha, 0)
+            let undo = self.board.make_move(mv);
+
+            // PVS: First move with full window, rest with null-window + re-search
+            let score = if i == 0 {
+                // First move (expected PV): full window search
+                self.negamax_pv(depth - 1, -beta, -alpha, 1).saturating_neg()
             } else {
-                null_score
+                // Non-PV moves: null-window search
+                let null_score = self.negamax_pv(depth - 1, -alpha - 1, -alpha, 1).saturating_neg();
+
+                // If null-window fails high and is not a beta cutoff, re-search with full window
+                if null_score > alpha && null_score < beta {
+                    // Re-search with full window
+                    self.negamax_pv(depth - 1, -beta, -alpha, 1).saturating_neg()
+                } else {
+                    null_score
+                }
+            };
+
+            let node_type = if score >= beta {
+                NodeType::LowerBound
+            } else if score <= alpha {
+                NodeType::UpperBound
+            } else {
+                NodeType::Exact
+            };
+            self.board.unmake_move(undo);
+
+            // Debug prints
+            // eprintln!("Move {} ({:?}) score={} best_score={} alpha={} time_expired={}", i, mv, score, best_score, alpha, self.time_expired);
+
+            // FIX Bug #1: Check if time expired during search
+            if self.time_expired {
+                break;
             }
-        };
-        
-        let node_type = if score >= beta {
-            NodeType::LowerBound
-        } else if score <= alpha {
-             NodeType::UpperBound
-        } else {
-             NodeType::Exact
-        };
-        self.board.unmake_move(undo);
 
-        // Debug prints
-        // eprintln!("Move {} ({:?}) score={} best_score={} alpha={} time_expired={}", i, mv, score, best_score, alpha, self.time_expired);
+            // Update best
+            if score > best_score {
+                // eprintln!("  UPDATING BEST: {} -> {}", best_score, score);
+                best_score = score;
+                best_root_move = mv;
+                // Update alpha for subsequent moves
+                if score > alpha {
+                    alpha = score;
+                }
+            }
 
-        // FIX Bug #1: Check if time expired during search
-        if self.time_expired {
-            break;
-        }
-
-        // Update best
-        if score > best_score {
-            // eprintln!("  UPDATING BEST: {} -> {}", best_score, score);
-            best_score = score;
-            best_root_move = mv;
-            // Update alpha for subsequent moves
-            if score > alpha {
-                alpha = score;
+            if score >= beta {
+                // Beta cutoff
+                break;
             }
         }
-
-        if score >= beta {
-            // Beta cutoff
-            break;
-        }
+        (best_root_move, best_score)
     }
-    (best_root_move, best_score)
-}
     /// Principal variation search (alpha-beta)
     fn negamax_pv(&mut self, depth: u8, mut alpha: i16, beta: i16, ply: u8) -> i16 {
         // Increment node counter
@@ -437,8 +452,8 @@ impl Search {
         // FIX: Use i32 to avoid overflow when computing window size
         // (beta - alpha can overflow i16 when beta=30000, alpha=-30000)
         let is_pv_node = (beta as i32) - (alpha as i32) > 1; // PV node has open window
-        // Probe TT
-        // Probe TT
+                                                             // Probe TT
+                                                             // Probe TT
         if let Some(entry) = self.tt.probe(key) {
             self.stats.inc_tt_hit();
             // In PV nodes, only use TT for move ordering, not for cutoffs
@@ -446,10 +461,10 @@ impl Search {
             if !is_pv_node && entry.depth >= depth {
                 let (entry_alpha, entry_beta) = entry.bound();
                 if entry_beta <= alpha {
-                    return entry_alpha; // Upper bound cutoff
+                    return entry_beta; // Upper bound cutoff
                 }
                 if entry_alpha >= beta {
-                    return entry_beta; // Lower bound cutoff
+                    return entry_alpha; // Lower bound cutoff
                 }
             }
         }
@@ -458,6 +473,17 @@ impl Search {
         if depth == 0 {
             // When at leaf, always use quiescence search
             return self.qsearch(alpha, beta, self.params.qsearch_depth);
+        }
+
+        // Draw detection - only for terminal positions
+        // Note: We check for checkmate/stalemate after move generation
+        // 50-move rule and threefold repetition should be handled by game controller when possible,
+        // but we can still exit early here for draw states
+        if self.board.is_insufficient_material()
+            || self.board.is_50_move_draw()
+            || self.board.is_threefold_repetition()
+        {
+            return 0; // Draw by insufficient material, 50-move, or threefold
         }
 
         // Draw detection - only for terminal positions
@@ -815,8 +841,8 @@ impl Search {
             NodeType::Exact
         };
 
-        self.tt
-            .store(key, best, depth, node_type, best_move);
+        self.tt.store(key, best, depth, node_type, best_move);
+        self.stats.inc_tt_entry();
 
         best
     }
@@ -894,7 +920,7 @@ impl Search {
         let moves_to_search = if in_check {
             // In check: must search all evasions
             let all_moves = self.board.generate_moves();
-            
+
             // Check for mate or stalemate (no legal moves)
             if all_moves.is_empty() {
                 if self.is_in_check() {
@@ -917,7 +943,7 @@ impl Search {
                 let all_moves = self.board.generate_moves();
                 let mut noisy_moves = Vec::new();
                 for &mv in &all_moves {
-                     let is_noisy = move_captured(mv).is_some()            // captures
+                    let is_noisy = move_captured(mv).is_some()            // captures
                         || move_flag(mv, FLAG_PROMOTION)                // promotions
                         || move_flag(mv, FLAG_CASTLE_KING)               // castling
                         || move_flag(mv, FLAG_CASTLE_QUEEN)              // castling
@@ -992,7 +1018,7 @@ impl Search {
                     // Not a capture or promotion, shouldn't happen in qsearch
                     0
                 };
-                
+
                 // Delta margin: even if we capture the piece and get a queen promotion,
                 // we still can't beat alpha. Skip this move.
                 const DELTA_MARGIN: i16 = 200; // Safety margin for positional compensation
@@ -1790,12 +1816,12 @@ mod tests {
     #[test]
     fn test_tt_integration() {
         let mut board = Board::new();
-        board.set_from_fen("8/8/8/8 w - - 0 1").unwrap();
+        board.set_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap();
 
         let mut search = Search::with_board(board);
 
         // Basic search
-        let (best_move, score) = search.search(Some(1));
+        let (best_move, score) = search.search(Some(2));
 
         // Should find some move (even with static eval)
         assert!(best_move != 0 || score != -INFINITE);
