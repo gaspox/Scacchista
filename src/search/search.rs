@@ -380,15 +380,19 @@ impl Search {
             // PVS: First move with full window, rest with null-window + re-search
             let score = if i == 0 {
                 // First move (expected PV): full window search
-                self.negamax_pv(depth - 1, -beta, -alpha, 1).saturating_neg()
+                self.negamax_pv(depth - 1, -beta, -alpha, 1)
+                    .saturating_neg()
             } else {
                 // Non-PV moves: null-window search
-                let null_score = self.negamax_pv(depth - 1, -alpha - 1, -alpha, 1).saturating_neg();
+                let null_score = self
+                    .negamax_pv(depth - 1, -alpha - 1, -alpha, 1)
+                    .saturating_neg();
 
                 // If null-window fails high and is not a beta cutoff, re-search with full window
                 if null_score > alpha && null_score < beta {
                     // Re-search with full window
-                    self.negamax_pv(depth - 1, -beta, -alpha, 1).saturating_neg()
+                    self.negamax_pv(depth - 1, -beta, -alpha, 1)
+                        .saturating_neg()
                 } else {
                     null_score
                 }
@@ -1816,7 +1820,9 @@ mod tests {
     #[test]
     fn test_tt_integration() {
         let mut board = Board::new();
-        board.set_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap();
+        board
+            .set_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+            .unwrap();
 
         let mut search = Search::with_board(board);
 
