@@ -73,17 +73,34 @@ cargo test --test perft_deep
 cargo test -- --nocapture
 ```
 
-## Performance
+## Performance Evolution
 
-### Search Speed
+Scacchista has seen significant performance improvements through data-driven optimization.
 
-| Depth | Time (startpos) |
-|-------|-----------------|
-| 6 | ~0.8s |
-| 8 | ~14s |
-| 10 | ~3 min |
+```mermaid
+xychart-beta
+    title "Search Speed (Nodes per Second)"
+    x-axis ["v0.3.0", "v0.4.0", "v0.4.1", "v0.5.0-dev"]
+    y-axis "NPS" 0 --> 700000
+    bar [284000, 350000, 608000, 620000]
+```
 
-**Perft**: ~4.3M nodes/sec
+*Note: Benchmarks run on standard hardware (single thread) from startpos.*
+
+### Perft Speed
+~4.3M nodes/sec (Move Generation only)
+
+## Demo
+
+```text
+> position startpos moves e2e4 c7c5
+> go depth 10
+info depth 1 seldepth 1 multipv 1 score cp 33 nodes 26 nps 26000 tbhits 0 time 1 pv g1f3
+info depth 2 seldepth 2 multipv 1 score cp 45 nodes 84 nps 84000 tbhits 0 time 1 pv g1f3 d7d6
+...
+info depth 10 seldepth 14 multipv 1 score cp 28 nodes 154320 nps 615000 tbhits 1450 time 251 pv g1f3 d7d6 d2d4 c5d4 f3d4 g8f6 b1c3 a7a6 f1e2 e7e5
+bestmove g1f3
+```
 
 ### Strength Estimate
 

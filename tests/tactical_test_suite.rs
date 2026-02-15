@@ -1,4 +1,3 @@
-use scacchista::board::{Board, Move};
 use scacchista::uci::{process_uci_line, UciEngine};
 
 fn solve_position(fen: &str, depth: u8, name: &str, expected_move: &str) {
@@ -33,9 +32,6 @@ mod tests {
     fn test_wac_001() {
         scacchista::init();
         // WAC 1 (Queen sac for mate)
-        let fen = "2rr2k1/pp3p1p/2p2np1/2PP4/2B1p3/1P2Q3/P2R1PP1/3R2K1 w - - 0 1";
-        // Expected move d2h6 is wrong for this FEN? 
-        // WAC 1 usually is: 2r3k1/1p2q1bp/3p4/3P1p2/3Q4/1w/4B1PP/3R2K1 w - - 0 1? 
         // Let's use the FEN from the previous test attempt.
         let fen_wac1 = "r1b2rk1/pp1p1p1p/2n2p2/2b5/2B5/2P2N2/PP1Q1PPP/R3K2R w KQ - 0 1";
         solve_position(fen_wac1, 6, "WAC 1: Mate in 2 (Queen sac)", "d2h6");

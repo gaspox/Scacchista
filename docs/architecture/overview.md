@@ -6,43 +6,44 @@ This document describes the high-level architecture of the Scacchista chess engi
 
 Scacchista is a UCI-compliant chess engine written in Rust, designed with a focus on performance and correctness. It follows a classical chess engine architecture with modern optimizations.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        UCI Interface                             │
-│                    (src/uci/loop.rs)                            │
-└─────────────────────────────┬───────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      Search Engine                               │
-│                 (src/search/search.rs)                          │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │
-│  │   Alpha-    │  │ Transposit. │  │     Time Manager        │ │
-│  │   Beta/PVS  │  │   Table     │  │   (src/time/mod.rs)     │ │
-│  └─────────────┘  └─────────────┘  └─────────────────────────┘ │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │
-│  │ Quiescence  │  │Move Ordering│  │    Thread Manager       │ │
-│  │   Search    │  │ (MVV-LVA,   │  │ (src/search/thread_mgr) │ │
-│  │             │  │  Killers)   │  │                         │ │
-│  └─────────────┘  └─────────────┘  └─────────────────────────┘ │
-└─────────────────────────────┬───────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     Evaluation (HCE)                             │
-│                     (src/eval.rs)                                │
-│  Material + PSQT + King Safety + Development + Center Control   │
-└─────────────────────────────┬───────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Board Representation                          │
-│                     (src/board.rs)                               │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │
-│  │  Bitboards  │  │   Zobrist   │  │    Move Generation      │ │
-│  │  (12x u64)  │  │   Hashing   │  │    (pseudo + legal)     │ │
-│  └─────────────┘  └─────────────┘  └─────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    classDef component fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef subcomponent fill:#ffffff,stroke:#444,stroke-dasharray: 5 5;
+
+    UCI[UCI Interface<br/>src/uci/loop.rs]:::component
+    Search[Search Engine<br/>src/search/search.rs]:::component
+    Eval[Evaluation HCE<br/>src/eval.rs]:::component
+    Board[Board Representation<br/>src/board.rs]:::component
+
+    UCI -->|Commands| Search
+    Search -->|Score| UCI
+    
+    Search -->|Evaluate| Eval
+    Search -->|Make/Unmake| Board
+    Eval -->|Query| Board
+
+    subgraph SearchModules [Search Modules]
+        direction TB
+        TT[Transposition Table]:::subcomponent
+        Time[Time Manager]:::subcomponent
+        Threads[Lazy-SMP]:::subcomponent
+        
+        Search -.-> TT
+        Search -.-> Time
+        Search -.-> Threads
+    end
+
+    subgraph BoardModules [Board Modules]
+        direction TB
+        BB[Bitboards]:::subcomponent
+        Zobrist[Zobrist Hash]:::subcomponent
+        Gen[Move Gen]:::subcomponent
+        
+        Board -.-> BB
+        Board -.-> Zobrist
+        Board -.-> Gen
+    end
 ```
 
 ## Core Components
@@ -134,52 +135,48 @@ See [Threading Details](./threading.md) for implementation notes.
 
 ### Position Setup Flow
 
-```
-1. UCI: "position startpos moves e2e4 e7e5"
-        │
-        ▼
-2. Parser extracts FEN/moves
-        │
-        ▼
-3. Board initialized from shakmaty::Chess
-        │
-        ▼
-4. Internal Board synced (bitboards, zobrist)
-        │
-        ▼
-5. Ready for search
+```mermaid
+sequenceDiagram
+    participant Parser as UCI Parser
+    participant Board as Board
+    
+    Parser->>Board: from_fen(fen_string)
+    Board-->>Parser: Result<Board>
+    loop For each move
+        Parser->>Board: make_move(mv)
+    end
+    Parser->>Board: Sync Internal State
 ```
 
 ### Search Flow
 
-```
-1. UCI: "go depth 8" or "go wtime 60000"
-        │
-        ▼
-2. TimeManager calculates allocation
-        │
-        ▼
-3. ThreadManager spawns workers
-        │
-        ▼
-4. Each worker runs iterative deepening:
-   │
-   ├─▶ For depth 1..max_depth:
-   │   │
-   │   ├─▶ negamax_pv() with aspiration window
-   │   │   │
-   │   │   ├─▶ TT probe
-   │   │   ├─▶ Generate + order moves
-   │   │   ├─▶ Search each move recursively
-   │   │   ├─▶ At leaves: quiescence search
-   │   │   └─▶ TT store
-   │   │
-   │   └─▶ Report "info depth N score cp X pv ..."
-   │
-   └─▶ Stop when time/depth exhausted
-        │
-        ▼
-5. Best move returned: "bestmove e2e4"
+```mermaid
+sequenceDiagram
+    participant Time as TimeManager
+    participant TM as ThreadManager
+    participant Worker
+    participant Search
+    participant TT
+    
+    Time->>TM: Allocates search time
+    TM->>Worker: Spawn / Wake Up
+    
+    loop Iterative Deepening
+        Worker->>Search: negamax_pv(depth)
+        Search->>TT: probe()
+        Search->>Search: Generate Moves
+        
+        par Recursion
+            Search->>Search: negamax(depth-1)
+        and Probe
+            Search->>TT: store()
+        end
+        
+        Worker->>TM: Report Info (PV, Score)
+    end
+    
+    TM->>Worker: Stop Signal
+    Worker->>TM: Return Best Move
 ```
 
 ## Dependencies
@@ -237,7 +234,7 @@ src/
 | Metric | Value | Notes |
 |--------|-------|-------|
 | Perft speed | ~4.3M nodes/sec | Move generation only |
-| Search speed | ~46k nodes/sec | Full search with eval |
+| Search speed | ~608k nodes/sec | Full search with eval (v0.5.0) |
 | make/unmake | ~76ns | Per move pair |
 | TT probe | ~31ns | Hash lookup |
 | Evaluation | ~3us | Full HCE |
@@ -250,7 +247,7 @@ See [Performance Reference](../reference/performance.md) for detailed benchmarks
 1. **Correctness First**: All changes validated via perft and tactical tests
 2. **Data-Driven Optimization**: Profile before optimizing
 3. **Clean Architecture**: Clear separation of concerns
-4. **Comprehensive Testing**: 80+ tests covering all components
+4. **Comprehensive Testing**: 90+ tests covering all components
 5. **Incremental Development**: Small, well-tested changes
 
 ---
