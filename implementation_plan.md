@@ -6,8 +6,9 @@ I miglioramenti sono ordinati per **impatto/sforzo**, dal più vantaggioso al pi
 
 ## Stato Attuale (v0.5.0-dev) ✅
 - **Fase 1 (Performance)**: Completata (Delta Pruning, TT Lock-free, Eval Bitboard).
-- **Fase 2.1 (PVS Root)**: Completata (incluso fix critici CI/Panic).
-- **Prossimo Step**: Fase 2.2 (Internal Iterative Reduction).
+- **Fase 2 (Forza Tattica)**: Completata (PVS Root, IIR, SEE Pruning, Countermove Heuristic). NPS 761k, 25.8% countermove effectiveness.
+- **Fase 3.1 (Tapered Eval)**: Completata. Score{mg,eg}, PSQT PeSTO, game_phase(), interpolazione MG/EG. center_control() rimossa.
+- **Prossimo Step**: Fase 3.2 (Struttura Pedonale).
 
 ---
 
@@ -82,39 +83,106 @@ Aggiungere array `countermoves[piece][to_sq]`: quando una mossa produce beta-cut
 
 ## Fase 3 — Valutazione Posizionale 🧠 [TODO]
 
-Eval più accurata = scelte strategiche migliori. Impatto: **30-80 Elo**.
+Eval più accurata = scelte strategiche migliori. Impatto stimato: **+80-130 Elo**.
+NPS target: mantenere >550k (perdita max accettabile: ~25-30% da 761k).
 
-### 3.1 Tapered Evaluation (MG/EG)
+Dipendenze: 3.1 è prerequisito di tutte le altre sotto-fasi.
 
-#### [MODIFY] [eval.rs](file:///home/gaspare/Documenti/TAL/Scacchista/src/eval.rs)
-
-Implementare PSQT separate per middlegame ed endgame. Calcolare `phase` dalla quantità di materiale. Score finale = interpolazione `(mg_score * phase + eg_score * (256 - phase)) / 256`. Questo è il singolo miglioramento eval più impattante (~**30-40 Elo**).
-
-```rust
-// Esempio concettuale
-let phase = compute_phase(&board); // 256=MG puro, 0=EG puro
-let mg = white_mg - black_mg;
-let eg = white_eg - black_eg;
-let score = (mg * phase + eg * (256 - phase)) / 256;
+```
+3.1 Tapered Eval ──┬──> 3.2 Struttura Pedonale ──> 3.3 Pedoni Passati
+                   ├──> 3.4 Coppia Alfieri
+                   ├──> 3.5 Torre Colonna Aperta ──> 3.6 Torre 7a Traversa
+                   ├──> 3.7 Mobilità ──> 3.8 Knight Outposts
+                   ├──> 3.9 King Tropism
+                   └──> 3.10 Space Advantage
 ```
 
-### 3.2 Mobilità
+| # | Sotto-fase | Elo | NPS cost | Priorità |
+|---|---|---|---|---|
+| 3.1 | Tapered Evaluation | +30-40 | ~1-2% | CRITICA |
+| 3.2 | Struttura Pedonale | +15-25 | ~3-5% | ALTA |
+| 3.3 | Pedoni Passati | +20-30 | ~3-4% | ALTA |
+| 3.4 | Coppia Alfieri | +5-10 | <0.5% | MEDIA |
+| 3.5 | Torre Colonna Aperta | +5-10 | ~1-2% | MEDIA |
+| 3.6 | Torre 7a Traversa | +3-5 | <0.5% | MEDIA |
+| 3.7 | Mobilità | +15-25 | ~8-12% | ALTA |
+| 3.8 | Knight Outposts | +5-8 | ~1% | MEDIA |
+| 3.9 | King Tropism | +5-8 | ~2-3% | BASSA |
+| 3.10 | Space Advantage | +3-5 | ~1% | BASSA |
 
-#### [MODIFY] [eval.rs](file:///home/gaspare/Documenti/TAL/Scacchista/src/eval.rs)
+### 3.1 Tapered Evaluation (MG/EG) [COMPLETED]
 
-Contare le caselle raggiungibili da ogni pezzo (escludendo caselle bloccate da pedoni amici). Bonus per alta mobilità, penalità per pezzi bloccati. Focus su: Cavallo, Alfiere, Torre, Donna. Impatto: ~**15-20 Elo**.
+#### [MODIFY] `src/eval.rs`
 
-### 3.3 Coppia degli Alfieri
+PREREQUISITO di tutto il resto. Struct `Score { mg: i32, eg: i32 }` con operatori aritmetici.
+`game_phase()` basata su materiale (N=1, B=1, R=2, Q=4, totale=24).
+PSQT doppie `[Score; 64]` per ogni pezzo (MG/EG). King EG con centralizzazione forte.
+Valori materiali MG/EG differenziati (PeSTO-like).
+`evaluate_fast()` aggiornata per usare PSQT tapered. Rimuovere `center_control()` (ridondante con mobilità).
+- **Verification**: Unit tests passed (tapered interpolation, game phase, PSQT symmetry). Solid foundation established.
 
-#### [MODIFY] [eval.rs](file:///home/gaspare/Documenti/TAL/Scacchista/src/eval.rs)
+### 3.2 Struttura Pedonale (Isolated, Doubled, Backward) [TODO]
 
-Bonus di ~30-50 cp quando un lato ha entrambi gli alfieri. Semplice ma efficace. Impatto: ~**5 Elo**.
+#### [MODIFY] `src/eval.rs`
 
-### 3.4 Torre su colonna aperta/semiaperta
+Maschere `ADJACENT_FILES[8]`, `FILE_MASKS[8]` in utils.
+Penalità: isolated s(5,15), doubled s(11,20), backward s(6,10).
+Tutto bitboard-based (shift, AND, OR).
 
-#### [MODIFY] [eval.rs](file:///home/gaspare/Documenti/TAL/Scacchista/src/eval.rs)
+### 3.3 Pedoni Passati [TODO]
 
-Bonus per torre su colonna senza pedoni amici (semiaperta: +10 cp) o senza pedoni di nessun colore (aperta: +20 cp). Impatto: ~**5-10 Elo**.
+#### [MODIFY] `src/eval.rs`
+
+Maschere `PASSED_PAWN_MASKS[color][64]` precalcolate.
+Bonus per rank: rank2 s(5,10) → rank7 s(149,257).
+Bonus extra per pedone passato supportato s(10,20).
+Ridurre PSQT pedoni rank 5-7 del 50-60% per evitare doppio conteggio.
+
+### 3.4 Coppia degli Alfieri [TODO]
+
+#### [MODIFY] `src/eval.rs`
+
+Bonus s(30,50) se ≥2 alfieri. Costo trascurabile.
+
+### 3.5 Torre su Colonna Aperta/Semiaperta [TODO]
+
+#### [MODIFY] `src/eval.rs`
+
+Aperta (no pedoni): s(25,15). Semiaperta (solo pedoni nemici): s(13,8).
+
+### 3.6 Torre su 7a Traversa [TODO]
+
+#### [MODIFY] `src/eval.rs`
+
+Bonus s(15,30) se re nemico su 8a o pedoni nemici su 7a. Si moltiplica per N torri.
+
+### 3.7 Mobilità [TODO]
+
+#### [MODIFY] `src/eval.rs`
+
+Caselle safe (no pedoni amici, no attacchi pedoni nemici) raggiungibili da N/B/R/Q.
+Tabelle lookup per pezzo: KNIGHT_MOBILITY[9], BISHOP_MOBILITY[14], ROOK_MOBILITY[15], QUEEN_MOBILITY[28].
+Usa magic bitboards già disponibili. NON includere in `evaluate_fast()`.
+Dopo implementazione: rimuovere `center_control()`.
+
+### 3.8 Knight Outposts [TODO]
+
+#### [MODIFY] `src/eval.rs`
+
+Cavaliere su rank 4-6 avversaria, non attaccabile da pedoni nemici.
+Bonus base s(30,15), +s(15,10) se supportato da pedone amico.
+
+### 3.9 King Tropism [TODO]
+
+#### [MODIFY] `src/eval.rs`
+
+Distanza di Chebyshev dal re nemico, peso per pezzo (Q=5, N=3, B=2, R=2). Solo MG.
+
+### 3.10 Space Advantage [TODO]
+
+#### [MODIFY] `src/eval.rs`
+
+Pedoni centrali (file c-f) avanzati oltre rank 3. Peso s(3,0). Solo MG. Opzionale.
 
 ---
 
