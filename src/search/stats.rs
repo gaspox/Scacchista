@@ -50,6 +50,9 @@ pub struct SearchStats {
     /// Nodes per second rate
     pub nps: u64,
 
+    /// Countermove cutoffs
+    pub countermove_cutoffs: u64,
+
     /// FIX Bug #3: Track last completed depth for UCI info display
     pub completed_depth: u8,
 }
@@ -130,6 +133,11 @@ impl SearchStats {
         self.see_evals += 1;
     }
 
+    /// Increment countermove cutoff count
+    pub fn inc_countermove_cutoff(&mut self) {
+        self.countermove_cutoffs += 1;
+    }
+
     /// Reset all statistics
     pub fn reset(&mut self) {
         *self = Self::new();
@@ -152,6 +160,7 @@ impl SearchStats {
         );
         println!("Alpha-Beta cutoffs: {}", self.cutoffs);
         println!("Null-move cutoffs: {}", self.null_move_cutoffs);
+        println!("Countermove cutoffs: {}", self.countermove_cutoffs);
         println!("LMR reductions: {}", self.lmr_reductions);
         println!("Futility pruned: {}", self.futility_pruned);
         println!("SEE evaluations: {}", self.see_evals);

@@ -7,7 +7,7 @@ fn main() {
     scacchista::init();
     let mut board = Board::new();
     board.set_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap();
-    let mut params = SearchParams::default();
+    let params = SearchParams::default();
     // params.debug = false; // Not available
     let mut search = Search::new(board, 64, params); // 64MB TT
 
@@ -24,4 +24,11 @@ fn main() {
     println!("NPS: {}", nps);
     println!("Best Move: {:?}", mv);
     println!("Score: {}", score);
+    
+    let stats = search.stats();
+    println!("Total Cutoffs: {}", stats.cutoffs);
+    println!("Countermove Cutoffs: {}", stats.countermove_cutoffs);
+    if stats.cutoffs > 0 {
+        println!("Countermove Effectiveness: {:.1}%", (stats.countermove_cutoffs as f64 / stats.cutoffs as f64) * 100.0);
+    }
 }

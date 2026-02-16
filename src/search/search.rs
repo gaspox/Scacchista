@@ -63,6 +63,10 @@ pub struct Search {
     /// Clear cache between nodes to avoid invalid results
     see_cache: HashMap<usize, i16>,
 
+    /// Countermove heuristic table [piece][to_sq]
+    /// Stores the move that caused beta cutoff in response to a previous move
+    countermoves: [[Move; 64]; 6],
+
     /// Stop flag for cooperative cancellation of search
     stop_flag: Option<Arc<AtomicBool>>,
 
@@ -95,6 +99,7 @@ impl Search {
             time_mgmt: TimeManagement::new(),
             killer_moves: vec![vec![0; killer_moves_count]; max_ply], // [ply][slot]
             history: [[[0; 64]; 6]; 2],
+            countermoves: [[0; 64]; 6],
             see_cache: HashMap::new(),
             stop_flag: None,
             time_expired: false,
@@ -380,18 +385,18 @@ impl Search {
             // PVS: First move with full window, rest with null-window + re-search
             let score = if i == 0 {
                 // First move (expected PV): full window search
-                self.negamax_pv(depth - 1, -beta, -alpha, 1)
+                self.negamax_pv(depth - 1, -beta, -alpha, 1, mv)
                     .saturating_neg()
             } else {
                 // Non-PV moves: null-window search
                 let null_score = self
-                    .negamax_pv(depth - 1, -alpha - 1, -alpha, 1)
+                    .negamax_pv(depth - 1, -alpha - 1, -alpha, 1, mv)
                     .saturating_neg();
 
                 // If null-window fails high and is not a beta cutoff, re-search with full window
                 if null_score > alpha && null_score < beta {
                     // Re-search with full window
-                    self.negamax_pv(depth - 1, -beta, -alpha, 1)
+                    self.negamax_pv(depth - 1, -beta, -alpha, 1, mv)
                         .saturating_neg()
                 } else {
                     null_score
@@ -434,7 +439,8 @@ impl Search {
         (best_root_move, best_score)
     }
     /// Principal variation search (alpha-beta)
-    fn negamax_pv(&mut self, depth: u8, mut alpha: i16, beta: i16, ply: u8) -> i16 {
+    /// `prev_move` is the move that led to this position (0 at root), used for countermove heuristic.
+    fn negamax_pv(&mut self, depth: u8, mut alpha: i16, beta: i16, ply: u8, prev_move: Move) -> i16 {
         // Increment node counter
         self.stats.inc_node();
 
@@ -547,7 +553,7 @@ impl Search {
             // Null window is [-beta, -beta+1] to verify fail-high
             let null_alpha = if beta > i16::MIN { -beta } else { i16::MAX };
             let null_beta = if beta < i16::MAX { -beta + 1 } else { i16::MIN };
-            let null_search_score = self.negamax_pv(null_depth, null_alpha, null_beta, ply + 1);
+            let null_search_score = self.negamax_pv(null_depth, null_alpha, null_beta, ply + 1, 0);
 
             // Handle overflow when negating
             let null_score = if null_search_score == i16::MIN {
@@ -642,6 +648,13 @@ impl Search {
             }
         }
 
+        // Lookup countermove for move ordering (prioritized after killers)
+        let counter_mv = if prev_move != 0 {
+            self.get_countermove(prev_move)
+        } else {
+            0
+        };
+
         moves.sort_by(|&a, &b| {
             // TT move first
             if let Some(tt_mv) = tt_move {
@@ -695,11 +708,20 @@ impl Search {
                     match (a_is_killer, b_is_killer) {
                         (true, false) => std::cmp::Ordering::Less,
                         (false, true) => std::cmp::Ordering::Greater,
-                        (true, true) | (false, false) => {
-                            // History heuristic
-                            let a_history = self.get_history_score(a);
-                            let b_history = self.get_history_score(b);
-                            b_history.cmp(&a_history)
+                        _ => {
+                            // Countermove heuristic: prioritize after killers
+                            let a_is_counter = counter_mv != 0 && a == counter_mv;
+                            let b_is_counter = counter_mv != 0 && b == counter_mv;
+                            match (a_is_counter, b_is_counter) {
+                                (true, false) => std::cmp::Ordering::Less,
+                                (false, true) => std::cmp::Ordering::Greater,
+                                _ => {
+                                    // History heuristic
+                                    let a_history = self.get_history_score(a);
+                                    let b_history = self.get_history_score(b);
+                                    b_history.cmp(&a_history)
+                                }
+                            }
                         }
                     }
                 }
@@ -771,12 +793,12 @@ impl Search {
 
             // First try reduced depth if LMR applies
             let score = if lmr_reduction > 0 {
-                let reduced_score = self.negamax_pv(search_depth, -alpha - 1, -alpha, ply + 1);
+                let reduced_score = self.negamax_pv(search_depth, -alpha - 1, -alpha, ply + 1, mv);
 
                 // Research at full depth if reduced search fails high
                 if reduced_score > alpha {
                     self.stats.inc_lmr_reduction();
-                    let full_score = self.negamax_pv(depth - 1 + extension, -beta, -alpha, ply + 1);
+                    let full_score = self.negamax_pv(depth - 1 + extension, -beta, -alpha, ply + 1, mv);
                     if full_score == i16::MIN {
                         i16::MAX
                     } else {
@@ -789,7 +811,7 @@ impl Search {
                 }
             } else {
                 // Normal search without reduction
-                let child_score = self.negamax_pv(search_depth, -beta, -alpha, ply + 1);
+                let child_score = self.negamax_pv(search_depth, -beta, -alpha, ply + 1, mv);
                 if child_score == i16::MIN {
                     i16::MAX
                 } else {
@@ -809,10 +831,18 @@ impl Search {
                         self.update_history(mv, depth);
                     }
                     if alpha >= beta {
+                        // Check if this cutoff was caused by the countermove suggested
+                        if prev_move != 0 && mv == self.get_countermove(prev_move) {
+                            self.stats.inc_countermove_cutoff();
+                        }
+
                         // Beta cutoff - store killer move if it's a non-capture and not TT move
                         if move_captured(mv).is_none() {
-                            // Check if this move is not already stored as killer
                             self.store_killer_move(ply as usize, mv);
+                            // Countermove heuristic: record this move as response to prev_move
+                            if prev_move != 0 {
+                                self.store_countermove(prev_move, mv);
+                            }
                         }
                         self.stats.inc_cutoff();
                         break; // Beta cutoff
@@ -1347,6 +1377,21 @@ impl Search {
         }
     }
 
+    /// Store a countermove: when `response` causes beta cutoff after `prev_move`,
+    /// record it so we can prioritize it in move ordering next time we see `prev_move`.
+    fn store_countermove(&mut self, prev_move: Move, response: Move) {
+        let piece = move_piece(prev_move) as usize;
+        let to_sq = move_to_sq(prev_move);
+        self.countermoves[piece][to_sq] = response;
+    }
+
+    /// Get the countermove for a given previous move (0 if none stored)
+    fn get_countermove(&self, prev_move: Move) -> Move {
+        let piece = move_piece(prev_move) as usize;
+        let to_sq = move_to_sq(prev_move);
+        self.countermoves[piece][to_sq]
+    }
+
     /// Get history score for a move
     fn get_history_score(&self, mv: Move) -> i16 {
         let color = self.board.side;
@@ -1444,9 +1489,6 @@ impl Search {
             };
 
         // Get all attackers for both sides (including current attacker)
-        let mut white_attackers = self.get_attackers_to_square(target_sq, Color::White);
-        let mut black_attackers = self.get_attackers_to_square(target_sq, Color::Black);
-
         let mut white_attackers = self.get_attackers_to_square(target_sq, Color::White);
         let mut black_attackers = self.get_attackers_to_square(target_sq, Color::Black);
 

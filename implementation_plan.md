@@ -70,7 +70,7 @@ Non cercare catture su case difese dove *nessuna* cattura è vantaggiosa (Target
 - **Fix**: Correzione logica SEE (backprop, pawn attacks).
 - **Benchmark**: 5x speedup (25s -> 5s), nodi ridotti da 18.7M a 3.8M con NPS stabile (761k). Engine tatticamente più solido.
 
-### 2.4 Countermove Heuristic [TODO]
+### 2.4 Countermove Heuristic [COMPLETED]
 
 #### [MODIFY] [search.rs](file:///home/gaspare/Documenti/TAL/Scacchista/src/search/search.rs)
 

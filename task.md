@@ -14,7 +14,7 @@
   - [x] Fix CI Failures (Fixed i16::MIN panic, TT bounds bug, and Timeout -32000 bug)
 - [x] 2.2 IIR (Internal Iterative Reduction)
 - [x] 2.3 SEE Pruning in qsearch
-- [ ] 2.4 Countermove Heuristic
+- [x] 2.4 Countermove Heuristic
 
 ## Fase 3 — Valutazione Posizionale 🧠
 - [ ] 3.1 Tapered Evaluation (MG/EG)
