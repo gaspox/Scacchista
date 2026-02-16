@@ -59,7 +59,8 @@ Al root (`iddfs`), la prima mossa viene cercata con finestra piena, le successiv
 
 #### [MODIFY] [search.rs](file:///home/gaspare/Documenti/TAL/Scacchista/src/search/search.rs#L432-L818)
 
-Se non c'è TT move al nodo PV con depth ≥ 4, ridurre depth di 1. Più semplice della vecchia IID e molto efficace. Guadagno: **5-10% nodi- **Benchmark Update**: NPS 723k (+19% vs baseline), nodi corretti post-fix TT.
+Se non c'è TT move al nodo PV con depth ≥ 4, ridurre depth di 1. Più semplice della vecchia IID e molto efficace. Guadagno: **5-10% nodi**.
+- **Benchmark Update**: NPS 723k (+19% vs baseline), nodi corretti post-fix TT.
 - **Prossimo Step**: Fase 2.4 (Countermove Heuristic). [TODO]
 
 ### 2.3 SEE Pruning per catture perdenti in qsearch [COMPLETED]
@@ -75,6 +76,7 @@ Non cercare catture su case difese dove *nessuna* cattura è vantaggiosa (Target
 #### [MODIFY] [search.rs](file:///home/gaspare/Documenti/TAL/Scacchista/src/search/search.rs)
 
 Aggiungere array `countermoves[piece][to_sq]`: quando una mossa produce beta-cutoff, memorizzare come "risposta" alla mossa precedente. Usato nel move ordering dopo killer moves. Costo: ~200 righe. Guadagno: **5-10 Elo**.
+- **Benchmark**: Countermove Effectiveness 25.8% (cutoffs indotti).
 
 ---
 
