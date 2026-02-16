@@ -55,7 +55,7 @@ Al root (`iddfs`), la prima mossa viene cercata con finestra piena, le successiv
 
 > **CI Fixes (Fase 2.1.1)**: Risolti panic `i16::MIN`, bug TT bounds, e logic timeout score `-32000`. Test suite 81/81 passati.
 
-### 2.2 IIR (Internal Iterative Reduction) [TODO]
+### 2.2 IIR (Internal Iterative Reduction) [COMPLETED]
 
 #### [MODIFY] [search.rs](file:///home/gaspare/Documenti/TAL/Scacchista/src/search/search.rs#L432-L818)
 
