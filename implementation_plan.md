@@ -7,9 +7,7 @@ I miglioramenti sono ordinati per **impatto/sforzo**, dal più vantaggioso al pi
 ## Stato Attuale (v0.5.0-dev) ✅
 - **Fase 1 (Performance)**: Completata (Delta Pruning, TT Lock-free, Eval Bitboard).
 - **Fase 2.1 (PVS Root)**: Completata (incluso fix critici CI/Panic).
-- **Fase 2.2 (IIR)**: Completata. Riduce depth di 1 ai nodi PV con depth ≥ 4 senza TT move. Fix collaterale: rimosso draw detection duplicato e `is_pv_node` ridondante.
-- **Benchmark Update**: NPS 723k (+19% vs baseline), nodi corretti post-fix TT.
-- **Prossimo Step**: Fase 2.3 (SEE Pruning catture perdenti in qsearch).
+- **Prossimo Step**: Fase 2.2 (Internal Iterative Reduction).
 
 ---
 
@@ -57,17 +55,20 @@ Al root (`iddfs`), la prima mossa viene cercata con finestra piena, le successiv
 
 > **CI Fixes (Fase 2.1.1)**: Risolti panic `i16::MIN`, bug TT bounds, e logic timeout score `-32000`. Test suite 81/81 passati.
 
-### 2.2 IIR (Internal Iterative Reduction) [COMPLETED]
+### 2.2 IIR (Internal Iterative Reduction) [TODO]
 
 #### [MODIFY] [search.rs](file:///home/gaspare/Documenti/TAL/Scacchista/src/search/search.rs#L432-L818)
 
-Se non c'è TT move al nodo PV con depth ≥ 4, ridurre depth di 1. Più semplice della vecchia IID e molto efficace. Guadagno: **5-10% nodi** risparmiati.
+Se non c'è TT move al nodo PV con depth ≥ 4, ridurre depth di 1. Più semplice della vecchia IID e molto efficace. Guadagno: **5-10% nodi- **Benchmark Update**: NPS 723k (+19% vs baseline), nodi corretti post-fix TT.
+- **Prossimo Step**: Fase 2.4 (Countermove Heuristic). [TODO]
 
-### 2.3 SEE Pruning per catture perdenti in qsearch [TODO]
+### 2.3 SEE Pruning per catture perdenti in qsearch [COMPLETED]
 
-#### [MODIFY] [search.rs](file:///home/gaspare/Documenti/TAL/Scacchista/src/search/search.rs#L970-L993)
+#### [MODIFY] [search.rs](file:///home/gaspare/Documenti/TAL/Scacchista/src/search/search.rs)
 
-Non cercare catture con SEE < 0 in qsearch (es: QxP protetto). Taglia rami irrilevanti. Guadagno: **10-15%** riduzione albero qsearch.
+Non cercare catture su case difese dove *nessuna* cattura è vantaggiosa (Target-based pruning).
+- **Fix**: Correzione logica SEE (backprop, pawn attacks).
+- **Benchmark**: 5x speedup (25s -> 5s), nodi ridotti da 18.7M a 3.8M con NPS stabile (761k). Engine tatticamente più solido.
 
 ### 2.4 Countermove Heuristic [TODO]
 

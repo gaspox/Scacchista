@@ -456,10 +456,14 @@ impl Search {
         // FIX: Use i32 to avoid overflow when computing window size
         // (beta - alpha can overflow i16 when beta=30000, alpha=-30000)
         let is_pv_node = (beta as i32) - (alpha as i32) > 1; // PV node has open window
-                                                             // Probe TT
-                                                             // Probe TT
+
+        // Probe TT
+        let mut has_tt_move = false;
         if let Some(entry) = self.tt.probe(key) {
             self.stats.inc_tt_hit();
+            if entry.best_move != 0 {
+                has_tt_move = true;
+            }
             // In PV nodes, only use TT for move ordering, not for cutoffs
             // This prevents score instability from aspiration window re-searches
             if !is_pv_node && entry.depth >= depth {
@@ -490,16 +494,15 @@ impl Search {
             return 0; // Draw by insufficient material, 50-move, or threefold
         }
 
-        // Draw detection - only for terminal positions
-        // Note: We check for checkmate/stalemate after move generation
-        // 50-move rule and threefold repetition should be handled by game controller when possible,
-        // but we can still exit early here for draw states
-        if self.board.is_insufficient_material()
-            || self.board.is_50_move_draw()
-            || self.board.is_threefold_repetition()
-        {
-            return 0; // Draw by insufficient material, 50-move, or threefold
-        }
+        // IIR (Internal Iterative Reduction):
+        // If no TT move at PV node with depth >= 4, reduce depth by 1.
+        // Without a TT move we have no good move to search first, so spending
+        // full depth is wasteful. Reducing by 1 saves ~5-10% nodes.
+        let depth = if is_pv_node && depth >= 4 && !has_tt_move {
+            depth - 1
+        } else {
+            depth
+        };
 
         // OPTIMIZATION: Cache is_in_check() result to avoid duplicate expensive calls
         let parent_in_check = self.is_in_check();
@@ -520,7 +523,6 @@ impl Search {
         }
 
         // Null-move pruning: try a reduced-depth search after skipping a turn
-        let is_pv_node = (beta as i32) - (alpha as i32) > 1;
         if self.params.enable_null_move_pruning
             && !is_pv_node  // Never use null-move in PV nodes
             && depth >= self.params.null_move_min_depth
@@ -1032,6 +1034,21 @@ impl Search {
                 }
             }
 
+            // SEE Pruning: skip captures with SEE < 0 (losing captures like QxP protected)
+            // Only for captures, not when in check (must search all evasions)
+            if self.params.enable_qsearch_optimizations
+                && !in_check
+                && move_captured(mv).is_some()
+            {
+                let target_sq = move_to_sq(mv);
+                // Use Target-based SEE for pruning safety (avoids pruning captures on squares where a pawn capture is good)
+                // This is less aggressive than see_capture but safer against SEE blindness (e.g. pins)
+                let see_score = self.see(target_sq, self.board.side);
+                if see_score < 0 {
+                    continue; // Skip losing capture
+                }
+            }
+
             let undo = self.board.make_move(mv);
 
             // Recursive quiescence search with negated bounds
@@ -1430,6 +1447,9 @@ impl Search {
         let mut white_attackers = self.get_attackers_to_square(target_sq, Color::White);
         let mut black_attackers = self.get_attackers_to_square(target_sq, Color::Black);
 
+        let mut white_attackers = self.get_attackers_to_square(target_sq, Color::White);
+        let mut black_attackers = self.get_attackers_to_square(target_sq, Color::Black);
+
         // Implementation standard SEE utilizzando la swap-off logic
         // side = attacker_color, gain = victim_value
         let mut gain_list = [0i16; 32]; // max 32 capture sequence
@@ -1498,15 +1518,12 @@ impl Search {
             };
         }
 
-        // Compute net gain using swap-off logic: sum of even-index gains - sum of odd-index gains
-        let mut see_acc = 0i32;
-        for i in 0..idx {
-            if i % 2 == 0 {
-                see_acc = see_acc.saturating_add(gain_list[i] as i32);
-            } else {
-                see_acc = see_acc.saturating_sub(gain_list[i] as i32);
-            }
+        // Back-propagate scores (Minimax)
+        while idx > 1 {
+            idx -= 1;
+            gain_list[idx - 1] = -((-gain_list[idx - 1]).max(gain_list[idx]));
         }
+        let see_acc = gain_list[0] as i32;
 
         // Clamp to i16 range and cache result
         let see_score = if see_acc > i16::MAX as i32 {
@@ -1521,6 +1538,125 @@ impl Search {
         see_score
     }
 
+    /// Static Exchange Evaluation asking: "Is the specific capture 'mv' good?"
+    /// This forces the first capture to be made by 'mv', then assumes optimal play.
+    fn see_capture(&mut self, mv: Move) -> i16 {
+        self.stats.inc_see_eval();
+        
+        let target_sq = move_to_sq(mv);
+        let from_sq = crate::move_from_sq(mv);
+        let attacker_piece = move_piece(mv);
+        let attacker_color = self.board.side;
+
+        let victim_value = if let Some(captured) = move_captured(mv) {
+            self.piece_value(&captured)
+        } else if move_flag(mv, crate::board::FLAG_PROMOTION) { // Promotion
+             // Promotion captures: assume value of Pawn? 
+             // For SEE pruning, main use is to prune bad captures.
+             // If we promote, it's usually good. 
+             // For safe SEE, let's assume we capture what's there.
+             // If empty, 0.
+             0
+        } else {
+            0
+        };
+
+        // Get all attackers
+        let mut white_attackers = self.get_attackers_to_square(target_sq, Color::White);
+        let mut black_attackers = self.get_attackers_to_square(target_sq, Color::Black);
+
+        // Remove the piece making the move
+        if attacker_color == Color::White {
+            white_attackers &= !(1u64 << from_sq);
+        } else {
+            black_attackers &= !(1u64 << from_sq);
+        }
+
+        // Add X-rays revealed by the mover
+        let from_set = white_attackers | black_attackers; // approximation of occupied for x-ray? 
+        // No, add_xray_attackers needs the "blocker" to be removed.
+        // We removed `from_sq`.
+        let revealed_white = self.add_xray_attackers(target_sq, from_sq, Color::White) & (self.board.white_occ | self.board.black_occ);
+        let revealed_black = self.add_xray_attackers(target_sq, from_sq, Color::Black) & (self.board.white_occ | self.board.black_occ);
+        
+        white_attackers |= revealed_white;
+        black_attackers |= revealed_black;
+
+        // SEE Gain Sequence
+        let mut gain_list = [0i16; 32];
+        let mut idx = 0;
+        
+        // 1. Value of victim
+        gain_list[idx] = victim_value;
+        idx += 1;
+        
+        // 2. Value of attacker (accumulated gain)
+        // gain[1] = attacker_val - gain[0]
+        let attacker_val = if move_flag(mv, crate::board::FLAG_PROMOTION) { // Promotion
+             self.piece_value(&PieceKind::Queen) // Assume Queen promotion for value?
+             // Actually, if we promote, the piece ON THE BOARD becomes a Queen.
+             // So next capturer gets a Queen.
+        } else {
+             self.piece_value(&attacker_piece)
+        };
+        
+        gain_list[idx] = attacker_val.saturating_sub(gain_list[idx-1]);
+        idx += 1;
+        
+        // Now iterate for subsequent captures (Opponent starts)
+        let mut side = if attacker_color == Color::White { Color::Black } else { Color::White };
+        
+        // Combined attackers for `add_xray` logic inside loop
+        let mut occupied = (self.board.white_occ | self.board.black_occ) & !(1u64 << from_sq);
+
+        loop {
+            // Find LVA for side
+            let (attackers, lva_square) = if side == Color::White {
+                (white_attackers, self.find_least_valuable_attacker(white_attackers, Color::White))
+            } else {
+                (black_attackers, self.find_least_valuable_attacker(black_attackers, Color::Black))
+            };
+
+            if lva_square.is_none() || attackers == 0 {
+                break;
+            }
+            let lva_sq = lva_square.unwrap();
+
+            // Remove attacker
+            white_attackers &= !(1u64 << lva_sq);
+            black_attackers &= !(1u64 << lva_sq);
+            occupied &= !(1u64 << lva_sq);
+
+            // Add X-rays
+            let rev_white = self.add_xray_attackers(target_sq, lva_sq, Color::White) & occupied;
+            let rev_black = self.add_xray_attackers(target_sq, lva_sq, Color::Black) & occupied;
+            white_attackers |= rev_white;
+            black_attackers |= rev_black;
+
+            // Value of piece capturing
+             let capture_val = if let Some((kind, _)) = self.board.piece_on(lva_sq) {
+                self.piece_value(&kind)
+            } else {
+                0
+            };
+
+            if idx < gain_list.len() {
+                gain_list[idx] = capture_val.saturating_sub(gain_list[idx - 1]);
+                idx += 1;
+            }
+
+            // Flip side
+            side = if side == Color::White { Color::Black } else { Color::White };
+        }
+
+        // Back-propagate
+        while idx > 1 {
+            idx -= 1;
+            gain_list[idx - 1] = -((-gain_list[idx - 1]).max(gain_list[idx]));
+        }
+        gain_list[0]
+    }
+
     /// Get all pieces that attack the target square from the given color
     fn get_attackers_to_square(&self, target_sq: usize, color: Color) -> u64 {
         let mut attackers = 0u64;
@@ -1530,14 +1666,58 @@ impl Search {
         };
 
         // Pawn attacks (special case: pawns attack differently from where they move)
+        // We perform a reverse-lookup: find pawns that CAN capture the target.
         attackers |= if color == Color::White {
             let white_pawns = self.board.piece_bb(PieceKind::Pawn, Color::White);
-            ((white_pawns & crate::utils::NOT_FILE_A) << 7) & (1u64 << target_sq)
-                | ((white_pawns & crate::utils::NOT_FILE_H) << 9) & (1u64 << target_sq)
+            let mut p_attacks = 0;
+            
+            // Capture to Top-Right (+7 from src perspective? No, src+7 is Top-Left).
+            // Check internal comments or verify shifts.
+            // White Pawn at src. Captures src+7 (Left-Up) and src+9 (Right-Up).
+            
+            // Check capture from src = target - 7
+            if target_sq >= 7 {
+                let src = target_sq - 7;
+                // Valid if src is NOT File A (a4->h4 wrap) matches logic: src(not A) captures +7.
+                if (1u64 << src) & white_pawns & crate::utils::NOT_FILE_A != 0 {
+                    p_attacks |= 1u64 << src;
+                }
+            }
+            // Check capture from src = target - 9
+            if target_sq >= 9 {
+                let src = target_sq - 9;
+                // Valid if src is NOT File H (h4->a5 wrap) matches logic: src(not H) captures +9.
+                if (1u64 << src) & white_pawns & crate::utils::NOT_FILE_H != 0 {
+                    p_attacks |= 1u64 << src;
+                }
+            }
+            p_attacks
         } else {
             let black_pawns = self.board.piece_bb(PieceKind::Pawn, Color::Black);
-            ((black_pawns & crate::utils::NOT_FILE_A) >> 9) & (1u64 << target_sq)
-                | ((black_pawns & crate::utils::NOT_FILE_H) >> 7) & (1u64 << target_sq)
+            let mut p_attacks = 0;
+            
+            // Black Pawn at src. Captures src-9 (Right-Down? No, Black Down is -8).
+            // -9 is (Rank-1, File-1). Down-Left.
+            // -7 is (Rank-1, File+1). Down-Right.
+            
+            // Check capture from src = target + 9 (Down-Left reversed)
+            if target_sq + 9 < 64 {
+                let src = target_sq + 9;
+                // src captures -9. Valid if src NOT File A.
+                if (1u64 << src) & black_pawns & crate::utils::NOT_FILE_A != 0 {
+                    p_attacks |= 1u64 << src;
+                }
+            }
+            
+            // Check capture from src = target + 7 (Down-Right reversed)
+            if target_sq + 7 < 64 {
+                let src = target_sq + 7;
+                // src captures -7. Valid if src NOT File H.
+                if (1u64 << src) & black_pawns & crate::utils::NOT_FILE_H != 0 {
+                    p_attacks |= 1u64 << src;
+                }
+            }
+            p_attacks
         };
 
         // Knight attacks
@@ -3127,5 +3307,50 @@ mod tests {
             "SEE cache test passed - SEE1: {}, SEE2: {}, Eval calls: {}->{}->{}",
             see1, see2, initial_evals, evals_after_first, evals_after_second
         );
+    }
+
+    #[test]
+    fn test_see_calculation_details() {
+        use crate::board::Board;
+        use crate::search::params::SearchParams;
+        use crate::search::search::Search;
+
+        // Position: White Q at d1, White P at e4. Black P at d5 (protected by P at c6).
+        // QxP is bad. PxP is good.
+        let mut board = Board::new();
+        board.set_from_fen("8/8/2p5/3p4/4P3/8/8/3Q4 w - - 0 1").unwrap();
+
+        let params = SearchParams::default();
+        let mut search = Search::new(board.clone(), 16, params);
+
+        // d5 is square 35
+        // Test Generic SEE (should pick PxP)
+        let see_generic = search.see(35, crate::board::Color::White);
+        println!("Generic SEE(d5): {}", see_generic);
+        
+        // Confirm that generic SEE considers the square "good" because PxP is possible
+        assert!(see_generic >= 0, "Generic SEE should be >= 0 (PxP)");
+        
+        // NOW test specific capture SEE_CAPTURE
+        // Identify moves manually or via generate
+        let moves = board.generate_moves();
+        
+        // Find QxP (d1 -> d5, from=3, to=35)
+        let qxd5 = moves.iter().find(|&&m| {
+            crate::move_from_sq(m) == 3 && crate::move_to_sq(m) == 35
+        }).expect("Qxd5 not found");
+        
+        // Find PxP (e4 -> d5, from=28, to=35)
+        let exd5 = moves.iter().find(|&&m| {
+            crate::move_from_sq(m) == 28 && crate::move_to_sq(m) == 35
+        }).expect("exd5 not found");
+
+        let see_q = search.see_capture(*qxd5);
+        println!("SEE capture QxP: {}", see_q);
+        assert!(see_q < -500, "QxP should be very negative (lose Q for P)");
+
+        let see_p = search.see_capture(*exd5);
+        println!("SEE capture PxP: {}", see_p);
+        assert!(see_p >= 0, "PxP should be positive/neutral");
     }
 }
