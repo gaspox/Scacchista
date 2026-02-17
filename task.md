@@ -17,10 +17,16 @@
 - [x] 2.4 Countermove Heuristic
 
 ## Fase 3 — Valutazione Posizionale 🧠
-- [ ] 3.1 Tapered Evaluation (MG/EG)
-- [ ] 3.2 Mobilità
-- [ ] 3.3 Coppia degli Alfieri
-- [ ] 3.4 Torre su colonna aperta
+- [x] 3.1 Tapered Evaluation (MG/EG)
+- [x] 3.2 Struttura Pedonale (Isolated, Doubled, Backward)
+- [ ] 3.3 Pedoni Passati
+- [ ] 3.4 Coppia degli Alfieri
+- [ ] 3.5 Torre su colonna aperta
+- [ ] 3.6 Torre 7a Traversa
+- [ ] 3.7 Mobilità
+- [ ] 3.8 Knight Outposts
+- [ ] 3.9 King Tropism
+- [ ] 3.10 Space Advantage
 
 ## Fase 5 — Portfolio Polish 🎨
 - [x] 5.1 Code Hygiene (fix clippy warnings)

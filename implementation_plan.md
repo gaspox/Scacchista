@@ -8,7 +8,8 @@ I miglioramenti sono ordinati per **impatto/sforzo**, dal più vantaggioso al pi
 - **Fase 1 (Performance)**: Completata (Delta Pruning, TT Lock-free, Eval Bitboard).
 - **Fase 2 (Forza Tattica)**: Completata (PVS Root, IIR, SEE Pruning, Countermove Heuristic). NPS 761k, 25.8% countermove effectiveness.
 - **Fase 3.1 (Tapered Eval)**: Completata. Score{mg,eg}, PSQT PeSTO, game_phase(), interpolazione MG/EG. center_control() rimossa.
-- **Prossimo Step**: Fase 3.2 (Struttura Pedonale).
+- **Fase 3.2 (Struttura Pedonale)**: Completata. FILE_MASKS, ADJACENT_FILES, penalità isolated/doubled/backward. NPS 1.13M (release), 82 test passati.
+- **Prossimo Step**: Fase 3.3 (Pedoni Passati).
 
 ---
 
@@ -121,13 +122,14 @@ Valori materiali MG/EG differenziati (PeSTO-like).
 `evaluate_fast()` aggiornata per usare PSQT tapered. Rimuovere `center_control()` (ridondante con mobilità).
 - **Verification**: Unit tests passed (tapered interpolation, game phase, PSQT symmetry). Solid foundation established.
 
-### 3.2 Struttura Pedonale (Isolated, Doubled, Backward) [TODO]
+### 3.2 Struttura Pedonale (Isolated, Doubled, Backward) [COMPLETED]
 
 #### [MODIFY] `src/eval.rs`
 
 Maschere `ADJACENT_FILES[8]`, `FILE_MASKS[8]` in utils.
 Penalità: isolated s(5,15), doubled s(11,20), backward s(6,10).
 Tutto bitboard-based (shift, AND, OR).
+- **Verification**: Unit tests passed (isolated, doubled, backward pawn detection and penalty application). Correct behavior on startpos (0 penalty).
 
 ### 3.3 Pedoni Passati [TODO]
 
