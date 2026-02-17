@@ -9,7 +9,8 @@ I miglioramenti sono ordinati per **impatto/sforzo**, dal più vantaggioso al pi
 - **Fase 2 (Forza Tattica)**: Completata (PVS Root, IIR, SEE Pruning, Countermove Heuristic). NPS 761k, 25.8% countermove effectiveness.
 - **Fase 3.1 (Tapered Eval)**: Completata. Score{mg,eg}, PSQT PeSTO, game_phase(), interpolazione MG/EG. center_control() rimossa.
 - **Fase 3.2 (Struttura Pedonale)**: Completata. FILE_MASKS, ADJACENT_FILES, penalità isolated/doubled/backward. NPS 1.13M (release), 82 test passati.
-- **Prossimo Step**: Fase 3.3 (Pedoni Passati).
+- **Fase 3.3 (Pedoni Passati)**: Completata. PASSED_PAWN_MASKS[2][64], bonus per rank, supporto. PSQT rank 5-7 ridotti 50%. NPS 1.14M, 88 test passati.
+- **Prossimo Step**: Fase 3.4 (Coppia Alfieri).
 
 ---
 
@@ -131,7 +132,7 @@ Penalità: isolated s(5,15), doubled s(11,20), backward s(6,10).
 Tutto bitboard-based (shift, AND, OR).
 - **Verification**: Unit tests passed (isolated, doubled, backward pawn detection and penalty application). Correct behavior on startpos (0 penalty).
 
-### 3.3 Pedoni Passati [TODO]
+### 3.3 Pedoni Passati [COMPLETED]
 
 #### [MODIFY] `src/eval.rs`
 
@@ -139,6 +140,7 @@ Maschere `PASSED_PAWN_MASKS[color][64]` precalcolate.
 Bonus per rank: rank2 s(5,10) → rank7 s(149,257).
 Bonus extra per pedone passato supportato s(10,20).
 Ridurre PSQT pedoni rank 5-7 del 50-60% per evitare doppio conteggio.
+- **Verification**: Unit tests passed (rank-based bonuses, supported pawn detection). Correctly handling blocked passed pawns.
 
 ### 3.4 Coppia degli Alfieri [TODO]
 
