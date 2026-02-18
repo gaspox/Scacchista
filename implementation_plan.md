@@ -10,7 +10,8 @@ I miglioramenti sono ordinati per **impatto/sforzo**, dal più vantaggioso al pi
 - **Fase 3.1 (Tapered Eval)**: Completata. Score{mg,eg}, PSQT PeSTO, game_phase(), interpolazione MG/EG. center_control() rimossa.
 - **Fase 3.2 (Struttura Pedonale)**: Completata. FILE_MASKS, ADJACENT_FILES, penalità isolated/doubled/backward. NPS 1.13M (release), 82 test passati.
 - **Fase 3.3 (Pedoni Passati)**: Completata. PASSED_PAWN_MASKS[2][64], bonus per rank, supporto. PSQT rank 5-7 ridotti 50%. NPS 1.14M, 88 test passati.
-- **Prossimo Step**: Fase 3.4 (Coppia Alfieri).
+- **Fase 3.4 (Coppia Alfieri)**: Completata. Bonus s(30,50) per ≥2 alfieri. NPS 1.11M, 92 test passati.
+- **Prossimo Step**: Fase 4.1 (King Tropism).
 
 ---
 
@@ -142,11 +143,12 @@ Bonus extra per pedone passato supportato s(10,20).
 Ridurre PSQT pedoni rank 5-7 del 50-60% per evitare doppio conteggio.
 - **Verification**: Unit tests passed (rank-based bonuses, supported pawn detection). Correctly handling blocked passed pawns.
 
-### 3.4 Coppia degli Alfieri [TODO]
+### 3.4 Coppia degli Alfieri [COMPLETED]
 
 #### [MODIFY] `src/eval.rs`
 
 Bonus s(30,50) se ≥2 alfieri. Costo trascurabile.
+- **Verification**: Unit tests passed (bishop pair detection, bonus application). Both colors correctly evaluated.
 
 ### 3.5 Torre su Colonna Aperta/Semiaperta [TODO]
 

@@ -159,12 +159,12 @@ const PAWN_PSQT_MG: [i32; 64] = [
     -26,  -4,  -4, -10,   3,   3,  33, -12,
     // Rank 4
     -27,  -2,  -5,  12,  17,   6,  10, -25,
-    // Rank 5
-    -14,  13,   6,  21,  23,  12,  17, -23,
-    // Rank 6
-     -6,   7,  26,  31,  65,  56,  25, -20,
-    // Rank 7
-     98, 134,  61,  95,  68, 126,  34, -11,
+    // Rank 5 (reduced ~50% to avoid double-counting with passed pawn bonus)
+     -7,   7,   3,  11,  12,   6,   9, -12,
+    // Rank 6 (reduced ~50%)
+     -3,   4,  13,  16,  33,  28,  13, -10,
+    // Rank 7 (reduced ~50%)
+     49,  67,  31,  48,  34,  63,  17,  -6,
     // Rank 8 (indices 56-63) - impossible for pawns
       0,   0,   0,   0,   0,   0,   0,   0,
 ];
@@ -179,12 +179,12 @@ const PAWN_PSQT_EG: [i32; 64] = [
       4,   7,  -6,   1,   0,  -5,  -1,  -8,
     // Rank 4
      13,   9,  -3,  -7,  -7,  -8,   3,  -1,
-    // Rank 5
-     32,  24,  13,   5,  -2,   4,  17,  17,
-    // Rank 6
-     94, 100,  85,  67,  56,  53,  82,  84,
-    // Rank 7
-    178, 173, 158, 134, 147, 132, 165, 187,
+    // Rank 5 (reduced ~50%)
+     16,  12,   7,   3,  -1,   2,   9,   9,
+    // Rank 6 (reduced ~50%)
+     47,  50,  43,  34,  28,  27,  41,  42,
+    // Rank 7 (reduced ~50%)
+     89,  87,  79,  67,  74,  66,  83,  94,
     // Rank 8
       0,   0,   0,   0,   0,   0,   0,   0,
 ];
@@ -649,6 +649,72 @@ const ADJACENT_FILES: [u64; 8] = [
     FILE_MASKS[6],                         // file H -> G
 ];
 
+/// Passed pawn mask: for a pawn on sq for a given color, the mask covers
+/// the file and adjacent files on all ranks ahead. If no enemy pawns are
+/// on these squares, the pawn is passed.
+/// Index: PASSED_PAWN_MASKS[color][sq], color: 0=White, 1=Black.
+const PASSED_PAWN_MASKS: [[u64; 64]; 2] = {
+    let mut masks = [[0u64; 64]; 2];
+    // Build at compile time
+    let mut sq = 0usize;
+    while sq < 64 {
+        let file = sq % 8;
+        let rank = sq / 8;
+
+        // White: ranks ahead = rank+1 .. 7
+        let mut r = rank + 1;
+        while r < 8 {
+            // Same file
+            masks[0][sq] |= 1u64 << (r * 8 + file);
+            // Adjacent files
+            if file > 0 {
+                masks[0][sq] |= 1u64 << (r * 8 + file - 1);
+            }
+            if file < 7 {
+                masks[0][sq] |= 1u64 << (r * 8 + file + 1);
+            }
+            r += 1;
+        }
+
+        // Black: ranks ahead = rank-1 .. 0
+        if rank > 0 {
+            let mut r = rank - 1;
+            loop {
+                masks[1][sq] |= 1u64 << (r * 8 + file);
+                if file > 0 {
+                    masks[1][sq] |= 1u64 << (r * 8 + file - 1);
+                }
+                if file < 7 {
+                    masks[1][sq] |= 1u64 << (r * 8 + file + 1);
+                }
+                if r == 0 {
+                    break;
+                }
+                r -= 1;
+            }
+        }
+
+        sq += 1;
+    }
+    masks
+};
+
+/// Passed pawn bonus by rank (from White's perspective: rank 1=index 0, rank 8=index 7).
+/// Rank 1 and 8 are impossible for pawns. Increasing bonus as pawn advances.
+const PASSED_PAWN_BONUS: [Score; 8] = [
+    s(0, 0),       // rank 1 (impossible)
+    s(5, 10),      // rank 2
+    s(10, 17),     // rank 3
+    s(22, 40),     // rank 4
+    s(56, 92),     // rank 5
+    s(96, 166),    // rank 6
+    s(149, 257),   // rank 7
+    s(0, 0),       // rank 8 (promoted)
+];
+
+/// Bonus for a passed pawn that is supported by a friendly pawn.
+const PASSED_PAWN_SUPPORTED_BONUS: Score = s(10, 20);
+
 /// Penalty (positive Score subtracted) for each isolated pawn.
 const ISOLATED_PAWN_PENALTY: Score = s(5, 15);
 /// Penalty for doubled pawns on a file (applied once per file with >1 pawn).
@@ -782,6 +848,87 @@ fn pawn_structure(board: &Board, color: Color) -> Score {
     }
 
     penalty
+}
+
+/// Evaluate passed pawns for one color. Returns a bonus (positive Score to add).
+fn passed_pawns(board: &Board, color: Color) -> Score {
+    let our_pawns = board.piece_bb(PieceKind::Pawn, color);
+    let their_pawns = board.piece_bb(
+        PieceKind::Pawn,
+        match color {
+            Color::White => Color::Black,
+            Color::Black => Color::White,
+        },
+    );
+    let color_idx = match color {
+        Color::White => 0,
+        Color::Black => 1,
+    };
+    let mut bonus = Score::default();
+
+    let mut bb = our_pawns;
+    while bb != 0 {
+        let sq = bb.trailing_zeros() as usize;
+        let mask = PASSED_PAWN_MASKS[color_idx][sq];
+
+        // A pawn is passed if no enemy pawns can block or capture it
+        if their_pawns & mask == 0 {
+            // Rank from White's perspective for bonus lookup
+            let rank = match color {
+                Color::White => sq / 8,
+                Color::Black => 7 - sq / 8,
+            };
+            bonus += PASSED_PAWN_BONUS[rank];
+
+            // Supported: a friendly pawn defends this pawn diagonally from behind
+            let file = sq % 8;
+            let support_rank = match color {
+                Color::White => {
+                    if sq / 8 > 0 {
+                        Some(sq / 8 - 1)
+                    } else {
+                        None
+                    }
+                }
+                Color::Black => {
+                    if sq / 8 < 7 {
+                        Some(sq / 8 + 1)
+                    } else {
+                        None
+                    }
+                }
+            };
+            if let Some(sr) = support_rank {
+                let mut supported = false;
+                if file > 0 && (our_pawns & (1u64 << (sr * 8 + file - 1))) != 0 {
+                    supported = true;
+                }
+                if file < 7 && (our_pawns & (1u64 << (sr * 8 + file + 1))) != 0 {
+                    supported = true;
+                }
+                if supported {
+                    bonus += PASSED_PAWN_SUPPORTED_BONUS;
+                }
+            }
+        }
+
+        bb &= bb - 1;
+    }
+
+    bonus
+}
+
+/// Bonus for having the bishop pair (two or more bishops).
+const BISHOP_PAIR_BONUS: Score = s(30, 50);
+
+/// Evaluate bishop pair for one color. Returns bonus if ≥2 bishops.
+fn bishop_pair(board: &Board, color: Color) -> Score {
+    let bishop_count = board.piece_bb(PieceKind::Bishop, color).count_ones();
+    if bishop_count >= 2 {
+        BISHOP_PAIR_BONUS
+    } else {
+        Score::default()
+    }
 }
 
 // ============================================================================
@@ -978,6 +1125,16 @@ pub fn evaluate(board: &Board) -> i16 {
     let black_pawn_penalty = pawn_structure(board, Color::Black);
     white_score -= white_pawn_penalty;
     black_score -= black_pawn_penalty;
+
+    // Passed pawn bonuses
+    let white_passed = passed_pawns(board, Color::White);
+    let black_passed = passed_pawns(board, Color::Black);
+    white_score += white_passed;
+    black_score += black_passed;
+
+    // Bishop pair bonus
+    white_score += bishop_pair(board, Color::White);
+    black_score += bishop_pair(board, Color::Black);
 
     // Development penalty (MG only)
     let white_dev = development_penalty(board, Color::White);
@@ -1306,5 +1463,161 @@ mod tests {
             black_penalty.eg, 0,
             "Black should have no pawn structure penalties at start"
         );
+    }
+
+    #[test]
+    fn test_passed_pawn_bonus() {
+        // White has a passed d-pawn on rank 5 (d5), no black pawns can stop it
+        let mut board = Board::new();
+        board
+            .set_from_fen("4k3/8/8/3P4/8/8/8/4K3 w - - 0 1")
+            .unwrap();
+
+        let bonus = passed_pawns(&board, Color::White);
+        // d5 = rank 5 -> PASSED_PAWN_BONUS[4] = s(56,92)
+        assert!(
+            bonus.mg >= 56 && bonus.eg >= 92,
+            "Passed pawn on rank 5 should get bonus: mg={}, eg={}",
+            bonus.mg,
+            bonus.eg
+        );
+    }
+
+    #[test]
+    fn test_passed_pawn_not_passed() {
+        // White pawn on d5, black pawn on d6 blocks it -> not passed
+        let mut board = Board::new();
+        board
+            .set_from_fen("4k3/8/3p4/3P4/8/8/8/4K3 w - - 0 1")
+            .unwrap();
+
+        let bonus = passed_pawns(&board, Color::White);
+        assert_eq!(
+            bonus.mg, 0,
+            "Blocked pawn should not be passed: mg={}",
+            bonus.mg
+        );
+    }
+
+    #[test]
+    fn test_passed_pawn_blocked_by_adjacent() {
+        // White pawn on d5, black pawn on e6 -> not passed (adjacent file ahead)
+        let mut board = Board::new();
+        board
+            .set_from_fen("4k3/8/4p3/3P4/8/8/8/4K3 w - - 0 1")
+            .unwrap();
+
+        let bonus = passed_pawns(&board, Color::White);
+        assert_eq!(
+            bonus.mg, 0,
+            "Pawn with enemy on adjacent file ahead should not be passed: mg={}",
+            bonus.mg
+        );
+    }
+
+    #[test]
+    fn test_passed_pawn_supported() {
+        // White passed pawn on d5, supported by c4 pawn
+        let mut board = Board::new();
+        board
+            .set_from_fen("4k3/8/8/3P4/2P5/8/8/4K3 w - - 0 1")
+            .unwrap();
+
+        let bonus = passed_pawns(&board, Color::White);
+        // Should get rank 5 bonus + supported bonus
+        assert!(
+            bonus.mg >= 56 + 10 && bonus.eg >= 92 + 20,
+            "Supported passed pawn should get extra bonus: mg={}, eg={}",
+            bonus.mg,
+            bonus.eg
+        );
+    }
+
+    #[test]
+    fn test_passed_pawn_black() {
+        // Black has a passed pawn on e4 (no white pawns on d,e,f files ahead)
+        let mut board = Board::new();
+        board
+            .set_from_fen("4k3/8/8/8/4p3/8/8/4K3 b - - 0 1")
+            .unwrap();
+
+        let bonus = passed_pawns(&board, Color::Black);
+        // e4 for black = rank 5 from black's perspective (7 - 3 = 4, index 4)
+        // Wait: sq=28 (e4), rank = 28/8 = 3, from black's perspective: 7-3 = 4
+        // PASSED_PAWN_BONUS[4] = s(56,92)
+        assert!(
+            bonus.mg >= 56 && bonus.eg >= 92,
+            "Black passed pawn on rank 5 should get bonus: mg={}, eg={}",
+            bonus.mg,
+            bonus.eg
+        );
+    }
+
+    #[test]
+    fn test_no_passed_pawns_startpos() {
+        // Starting position: no passed pawns (all blocked)
+        let mut board = Board::new();
+        board
+            .set_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+            .unwrap();
+
+        let white_bonus = passed_pawns(&board, Color::White);
+        let black_bonus = passed_pawns(&board, Color::Black);
+        assert_eq!(white_bonus.mg, 0, "No passed pawns at start for white");
+        assert_eq!(black_bonus.mg, 0, "No passed pawns at start for black");
+    }
+
+    #[test]
+    fn test_bishop_pair_bonus() {
+        // White has two bishops
+        let mut board = Board::new();
+        board
+            .set_from_fen("4k3/8/8/8/8/8/8/3BBK3 w - - 0 1")
+            .unwrap();
+
+        let bonus = bishop_pair(&board, Color::White);
+        assert_eq!(bonus.mg, 30, "Bishop pair should give MG bonus");
+        assert_eq!(bonus.eg, 50, "Bishop pair should give EG bonus");
+    }
+
+    #[test]
+    fn test_bishop_pair_single_bishop() {
+        // White has only one bishop
+        let mut board = Board::new();
+        board
+            .set_from_fen("4k3/8/8/8/8/8/8/4BK3 w - - 0 1")
+            .unwrap();
+
+        let bonus = bishop_pair(&board, Color::White);
+        assert_eq!(bonus.mg, 0, "Single bishop should not get pair bonus");
+        assert_eq!(bonus.eg, 0, "Single bishop should not get pair bonus");
+    }
+
+    #[test]
+    fn test_bishop_pair_both_colors() {
+        // Both sides have bishop pair
+        let mut board = Board::new();
+        board
+            .set_from_fen("b1b1k3/8/8/8/8/8/8/3BBK3 w - - 0 1")
+            .unwrap();
+
+        let white_bonus = bishop_pair(&board, Color::White);
+        let black_bonus = bishop_pair(&board, Color::Black);
+        assert_eq!(white_bonus.mg, 30, "White should get bishop pair bonus");
+        assert_eq!(black_bonus.mg, 30, "Black should get bishop pair bonus");
+    }
+
+    #[test]
+    fn test_bishop_pair_startpos() {
+        // Starting position: each side has 2 bishops (bishop pair!)
+        let mut board = Board::new();
+        board
+            .set_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+            .unwrap();
+
+        let white_bonus = bishop_pair(&board, Color::White);
+        let black_bonus = bishop_pair(&board, Color::Black);
+        assert_eq!(white_bonus.mg, 30, "Bishop pair at start for white");
+        assert_eq!(black_bonus.mg, 30, "Bishop pair at start for black");
     }
 }
