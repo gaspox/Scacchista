@@ -20,7 +20,7 @@
 - [x] 3.1 Tapered Evaluation (MG/EG)
 - [x] 3.2 Struttura Pedonale (Isolated, Doubled, Backward)
 - [x] 3.3 Pedoni Passati
-- [ ] 3.4 Coppia degli Alfieri
+- [x] 3.4 Coppia degli Alfieri
 - [ ] 3.5 Torre su colonna aperta
 - [ ] 3.6 Torre 7a Traversa
 - [ ] 3.7 Mobilità
