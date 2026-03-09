@@ -28,7 +28,7 @@ fn test_time_expiration_no_fake_mate() {
     // Use very short time to force timeout during search
     // This should trigger the bug: score corruption when time expires
     let params = SearchParams::new()
-        .max_depth(20)  // High depth to ensure it won't complete
+        .max_depth(20) // High depth to ensure it won't complete
         .time_limit(50); // 50ms - will timeout mid-search
 
     let mut search = Search::new(board, 16, params);
@@ -59,9 +59,7 @@ fn test_movetime_vs_depth_consistency() {
         let mut board = Board::new();
         board.set_from_fen(fen).expect("Valid FEN");
 
-        let params = SearchParams::new()
-            .max_depth(20)
-            .time_limit(100); // 100ms timeout
+        let params = SearchParams::new().max_depth(20).time_limit(100); // 100ms timeout
 
         let mut search = Search::new(board, 16, params);
         let (_mv, score) = search.search(Some(20));
@@ -85,20 +83,26 @@ fn test_depth_based_no_corruption() {
     let mut board = Board::new();
     board.set_from_fen(fen).expect("Valid FEN");
 
-    let params = SearchParams::new()
-        .max_depth(5)
-        .time_limit(0); // No time limit
+    let params = SearchParams::new().max_depth(5).time_limit(0); // No time limit
 
     let mut search = Search::new(board, 16, params);
     let (mv, score) = search.search(Some(5));
 
     // With depth-based search, should get reasonable result
-    assert!(score.abs() < 10000, "Depth-based search returned bad score: {}", score);
+    assert!(
+        score.abs() < 10000,
+        "Depth-based search returned bad score: {}",
+        score
+    );
     assert_ne!(mv, 0, "Depth-based search returned null move");
 
     // Score should be negative (black is losing - queen hanging)
     // or at least not a huge positive (fake mate)
-    assert!(score < 5000, "Score {} suggests black is winning, but queen is hanging!", score);
+    assert!(
+        score < 5000,
+        "Score {} suggests black is winning, but queen is hanging!",
+        score
+    );
 }
 
 #[test]
@@ -121,16 +125,17 @@ fn stress_test_time_control() {
         // Random time between 10ms and 200ms
         let time_ms = 10 + (i * 7) % 190;
 
-        let params = SearchParams::new()
-            .max_depth(20)
-            .time_limit(time_ms);
+        let params = SearchParams::new().max_depth(20).time_limit(time_ms);
 
         let mut search = Search::new(board, 16, params);
         let (_mv, score) = search.search(Some(20));
 
         if score.abs() >= 29000 {
             corrupt_count += 1;
-            eprintln!("Iteration {}: Corrupted score {} with time {}ms", i, score, time_ms);
+            eprintln!(
+                "Iteration {}: Corrupted score {} with time {}ms",
+                i, score, time_ms
+            );
         }
     }
 

@@ -60,13 +60,15 @@ fn main() {
     // Test 3: Profiling is_square_attacked
     {
         let mut board = Board::new();
-        let _ = board.set_from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+        let _ = board
+            .set_from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
 
         let iterations = 1_000_000;
         let start = Instant::now();
 
         for _ in 0..iterations {
-            let _ = board.is_square_attacked(4, scacchista::board::Color::Black); // e1 attacked by black
+            let _ = board.is_square_attacked(4, scacchista::board::Color::Black);
+            // e1 attacked by black
         }
 
         let elapsed = start.elapsed();

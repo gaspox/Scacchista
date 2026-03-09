@@ -185,7 +185,10 @@ mod tests {
         // (even though age diff = 1, the condition "depth >= existing.depth && node_type == Exact" triggers)
         tt.store(0x1234, 200, 5, NodeType::Exact, 0x2222);
         let entry = tt.probe(0x1234).expect("Entry should exist");
-        assert_eq!(entry.age, 255, "Exact node replaces at same depth regardless of age");
+        assert_eq!(
+            entry.age, 255,
+            "Exact node replaces at same depth regardless of age"
+        );
         assert_eq!(entry.score, 200, "Score should be updated");
 
         // Advance again (wraps to 0)
@@ -196,7 +199,10 @@ mod tests {
         // Store a NON-exact entry with shallow depth - should NOT replace
         tt.store(0x1234, 250, 3, NodeType::UpperBound, 0x2233);
         let entry = tt.probe(0x1234).expect("Entry should exist");
-        assert_eq!(entry.age, 255, "Should not replace with shallow UpperBound and age diff = 1");
+        assert_eq!(
+            entry.age, 255,
+            "Should not replace with shallow UpperBound and age diff = 1"
+        );
         assert_eq!(entry.score, 200, "Score unchanged");
 
         // Advance again (age = 1)
@@ -207,7 +213,10 @@ mod tests {
         // Should replace even with same depth
         tt.store(0x1234, 300, 5, NodeType::Exact, 0x3333);
         let entry = tt.probe(0x1234).expect("Entry should exist");
-        assert_eq!(entry.age, 1, "Should replace with age diff >= 2 after wraparound");
+        assert_eq!(
+            entry.age, 1,
+            "Should replace with age diff >= 2 after wraparound"
+        );
         assert_eq!(entry.score, 300, "Score should be updated");
     }
 
@@ -229,7 +238,10 @@ mod tests {
 
         // Should NOT replace (depth 5 < depth 10)
         let entry = tt.probe(0x5678).expect("Entry should exist");
-        assert_eq!(entry.depth, 10, "Deep entry should not be replaced by shallow");
+        assert_eq!(
+            entry.depth, 10,
+            "Deep entry should not be replaced by shallow"
+        );
         assert_eq!(entry.score, 100, "Score should be unchanged");
 
         // Try to replace with same depth (depth 10) and Exact node type
@@ -238,7 +250,10 @@ mod tests {
         // SHOULD replace (depth >= existing.depth && node_type == Exact)
         let entry = tt.probe(0x5678).expect("Entry should exist");
         assert_eq!(entry.depth, 10);
-        assert_eq!(entry.score, 300, "Should replace at same depth with Exact node");
+        assert_eq!(
+            entry.score, 300,
+            "Should replace at same depth with Exact node"
+        );
 
         // Try to replace with deeper search (depth 15)
         tt.store(0x5678, 400, 15, NodeType::UpperBound, 0x4444);
@@ -266,7 +281,11 @@ mod tests {
 
         // SHOULD replace (Exact is preferred)
         let entry = tt.probe(0xABCD).expect("Entry should exist");
-        assert_eq!(entry.node_type, NodeType::Exact, "Exact should replace bound at same depth");
+        assert_eq!(
+            entry.node_type,
+            NodeType::Exact,
+            "Exact should replace bound at same depth"
+        );
         assert_eq!(entry.score, 200);
 
         // Try to replace Exact with LowerBound at same depth
@@ -274,7 +293,11 @@ mod tests {
 
         // Should NOT replace (Exact is only replaced by depth or Exact)
         let entry = tt.probe(0xABCD).expect("Entry should exist");
-        assert_eq!(entry.node_type, NodeType::Exact, "Exact should not be replaced by bound");
+        assert_eq!(
+            entry.node_type,
+            NodeType::Exact,
+            "Exact should not be replaced by bound"
+        );
         assert_eq!(entry.score, 200, "Score unchanged");
     }
 

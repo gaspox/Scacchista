@@ -3,7 +3,7 @@
 [![CI](https://github.com/gaspox/Scacchista/actions/workflows/ci.yml/badge.svg)](https://github.com/gaspox/Scacchista/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75+-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-0.4.0-green.svg)](https://github.com/gaspox/Scacchista/releases)
+[![Version](https://img.shields.io/badge/version-0.4.1-green.svg)](https://github.com/gaspox/Scacchista/releases)
 
 A UCI-compliant chess engine written in Rust, featuring alpha-beta search with parallel lazy-SMP threading and hand-crafted evaluation.
 
@@ -66,11 +66,11 @@ quit
 # Run all tests
 cargo test
 
+# Run perft tests specifically
+cargo test --test perft_deep
+
 # Run with verbose output
 cargo test -- --nocapture
-
-# Run specific test
-cargo test test_king_safety
 ```
 
 ## Performance
@@ -156,7 +156,7 @@ Scacchista uses the [`shakmaty`](https://github.com/niklasf/shakmaty) crate (GPL
 
 See [Releases](https://github.com/gaspox/Scacchista/releases) for precompiled binaries.
 
-Latest: **v0.4.0** - Strategic improvements (king safety, check extensions, pawn bonuses)
+Latest: **v0.4.1** - Bug fixes (move generation for pawn promotions, time management for fixed movestogo/movestogo), and expanded regression test suite (tactical, draw detection, threading stress).
 
 ## Acknowledgments
 

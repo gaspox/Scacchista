@@ -361,7 +361,10 @@ impl Search {
             // record a node and TT entry so stats/tests consider this position handled
             self.stats.inc_node();
             let key = self.board.recalc_zobrist();
-            self.tt.lock().unwrap().store(key, sc, depth, NodeType::Exact, 0);
+            self.tt
+                .lock()
+                .unwrap()
+                .store(key, sc, depth, NodeType::Exact, 0);
             self.stats.inc_tt_entry();
             return (0, sc);
         }
@@ -470,6 +473,17 @@ impl Search {
             return self.qsearch(alpha, beta, self.params.qsearch_depth);
         }
 
+        // Draw detection - only for terminal positions
+        // Note: We check for checkmate/stalemate after move generation
+        // 50-move rule and threefold repetition should be handled by game controller when possible,
+        // but we can still exit early here for draw states
+        if self.board.is_insufficient_material()
+            || self.board.is_50_move_draw()
+            || self.board.is_threefold_repetition()
+        {
+            return 0; // Draw by insufficient material, 50-move, or threefold
+        }
+
         // OPTIMIZATION: Cache is_in_check() result to avoid duplicate expensive calls
         let parent_in_check = self.is_in_check();
 
@@ -494,9 +508,9 @@ impl Search {
             && !is_pv_node  // Never use null-move in PV nodes
             && depth >= self.params.null_move_min_depth
             && ply > 0  // Not at root
-            && !parent_in_check  // Reuse cached check state
+            && !parent_in_check
+        // Reuse cached check state
         {
-
             // Null-move reduction: typically R = 2 or 3, we'll use R = 2
             let reduction = 2;
             // Ensure we don't go below depth 0
@@ -795,7 +809,10 @@ impl Search {
             NodeType::Exact
         };
 
-        self.tt.lock().unwrap().store(key, best, depth, node_type, best_move);
+        self.tt
+            .lock()
+            .unwrap()
+            .store(key, best, depth, node_type, best_move);
 
         best
     }
@@ -836,6 +853,14 @@ impl Search {
 
         // Clear SEE cache for this node position
         self.clear_see_cache();
+
+        // Draw detection - can cover insufficient material, 50-move rule, and threefold repetition
+        if self.board.is_insufficient_material()
+            || self.board.is_50_move_draw()
+            || self.board.is_threefold_repetition()
+        {
+            return 0; // Draw by insufficient material, 50-move, or threefold
+        }
 
         // Stand pat: use fast eval (material + PSQT only) for speed
         let stand_pat = self.static_eval_fast();
@@ -1053,12 +1078,7 @@ impl Search {
 
     /// Check if current side is in check
     fn is_in_check(&self) -> bool {
-        let king_sq = self.board.king_sq(self.board.side);
-        let opponent = match self.board.side {
-            Color::White => Color::Black,
-            Color::Black => Color::White,
-        };
-        self.board.is_square_attacked(king_sq, opponent)
+        self.board.is_in_check(self.board.side)
     }
 
     /// Check if position is in endgame (few pieces remaining)
