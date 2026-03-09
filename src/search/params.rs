@@ -45,6 +45,10 @@ pub struct SearchParams {
 
     /// Maximum depth for quiescence search
     pub qsearch_depth: u8,
+
+    /// Enable qsearch optimizations (Delta Pruning, Dedicated Capture Gen)
+    /// Used for benchmarking
+    pub enable_qsearch_optimizations: bool,
 }
 
 impl Default for SearchParams {
@@ -64,6 +68,7 @@ impl Default for SearchParams {
             futility_min_depth: 3,
             killer_moves_count: 2,
             qsearch_depth: 4,
+            enable_qsearch_optimizations: true,
         }
     }
 }
@@ -155,6 +160,12 @@ impl SearchParams {
     /// Set quiescence search depth
     pub fn qsearch_depth(mut self, depth: u8) -> Self {
         self.qsearch_depth = depth;
+        self
+    }
+
+    /// Enable or disable qsearch optimizations (for benchmarking)
+    pub fn enable_qsearch_optimizations(mut self, enable: bool) -> Self {
+        self.enable_qsearch_optimizations = enable;
         self
     }
 }
