@@ -5,16 +5,16 @@
 
 ---
 
-## Stato Attuale (Post-Fix v0.5.1)
+## Stato Attuale (Post-Merge v0.5.1 su master)
 
-### ✅ COMPLETATO
+### ✅ COMPLETATO in master
 
 | Fase | Feature | Commit | Status |
 |------|---------|--------|--------|
-| **Fase 1** | Performance Optimizations | fe35877 | ✅ Fixato TT (Mutex) |
+| **Fase 1** | Performance Optimizations | fe35877, 540e1a7 | ✅ |
 | 1.1 | Capture Generation | fe35877 | ✅ |
-| 1.2 | Delta Pruning | fe35877 | ✅ (disabilitato in v0.5.1) |
-| 1.3 | ~~Lock-free TT~~ | ~~fe35877~~ | ❌ **Buggy** - Sostituito con Mutex |
+| 1.2 | Delta Pruning | fe35877 | ✅ (params: enable_qsearch_optimizations) |
+| 1.3 | TT (Mutex fix) | 540e1a7 | ✅ Sostituito lock-free con Mutex |
 | 1.4 | Bitboard Eval | fe35877 | ✅ |
 | **Fase 2** | Tattica | 84d62d8, 24e985f, 085e98c | ✅ |
 | 2.1 | PVS at root | 84d62d8 | ✅ |
@@ -22,18 +22,17 @@
 | 2.3 | SEE Pruning | 24e985f | ✅ |
 | 2.4 | Countermove Heuristic | 085e98c | ✅ (+19% NPS) |
 | **Fase 3** | Valutazione | 8a0bc35, 1892d2c, 09ca171 | ✅ |
-| 3.1 | Tapered Eval | 8a0bc35 | ✅ (valori fixati in v0.5.1) |
+| 3.1 | Tapered Eval | 8a0bc35 | ✅ (PeSTO values) |
 | 3.2 | Pawn Structure | 8a0bc35 | ✅ |
 | 3.3 | Passed Pawns | 1892d2c | ✅ |
 | 3.4 | Bishop Pair | 09ca171 | ✅ |
 
-### 🔄 FIX APPLICATI (v0.5.1)
+### 🔄 FIX INTEGRATI (merge v0.5.1)
 
-| Problema | Fix | File |
-|----------|-----|------|
-| TT race condition | Mutex TT | src/search/tt.rs |
-| Valori materiali errati | Scala v0.4.1 | src/eval.rs |
-| Pruning troppo aggressivo | tuning conservativo | src/search/params.rs |
+| Problema | Fix | File | Commit |
+|----------|-----|------|--------|
+| TT race condition | Mutex TT | src/search/tt.rs | 540e1a7 |
+| Pruning tuning | futility=150, lmr=1 | src/search/params.rs | 540e1a7 |
 
 ---
 
