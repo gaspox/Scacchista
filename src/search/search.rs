@@ -10,7 +10,6 @@ use crate::board::{
     Board, Color, Move, PieceKind, FLAG_CASTLE_KING, FLAG_CASTLE_QUEEN, FLAG_PROMOTION,
 };
 use crate::{move_captured, move_flag, move_piece, move_to_sq};
-use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -20,6 +19,10 @@ use std::sync::{
 pub const INFINITE: i16 = 32000;
 pub const MATE: i16 = 30001;
 pub const MATE_THRESHOLD: i16 = 29999;
+
+/// Sentinel value for empty SEE cache entries
+/// Using i16::MIN which is outside normal SEE range (-1000 to +1000)
+pub const SEE_CACHE_NONE: i16 = i16::MIN;
 
 /// Calculate LMR reduction using formula instead of lookup table
 /// Reduction based on depth and move count (quiet moves only)
@@ -60,8 +63,9 @@ pub struct Search {
     history: [[[i16; 64]; 6]; 2], // [color][piece][square]
 
     /// SEE cache for current position [square] -> score
-    /// Clear cache between nodes to avoid invalid results
-    see_cache: HashMap<usize, i16>,
+    /// Array-based cache for O(1) access without hashing overhead
+    /// Uses SEE_CACHE_NONE as sentinel for empty entries
+    see_cache: [i16; 64],
 
     /// Countermove heuristic table [piece][to_sq]
     /// Stores the move that caused beta cutoff in response to a previous move
@@ -100,7 +104,7 @@ impl Search {
             killer_moves: vec![vec![0; killer_moves_count]; max_ply], // [ply][slot]
             history: [[[0; 64]; 6]; 2],
             countermoves: [[0; 64]; 6],
-            see_cache: HashMap::new(),
+            see_cache: [SEE_CACHE_NONE; 64],
             stop_flag: None,
             time_expired: false,
             time_check_counter: 0,
@@ -512,6 +516,22 @@ impl Search {
 
         // OPTIMIZATION: Cache is_in_check() result to avoid duplicate expensive calls
         let parent_in_check = self.is_in_check();
+
+        // Razoring: at low depth, if static eval is far below alpha, 
+        // the position is likely hopeless. Return a fail-low score.
+        if self.params.enable_razoring
+            && depth <= self.params.razoring_max_depth
+            && !is_pv_node
+            && !parent_in_check
+            && !self.is_endgame()
+        {
+            let static_eval = self.static_eval();
+            let threshold = alpha - self.params.razoring_margin;
+            if static_eval < threshold {
+                self.stats.inc_razoring_pruned();
+                return static_eval; // Fail low - position is hopeless
+            }
+        }
 
         // Futility pruning: if evaluation + margin can't beat beta, prune
         if self.params.enable_futility_pruning
@@ -1452,8 +1472,10 @@ impl Search {
     }
 
     /// Clear SEE cache (call at each node position)
+    /// Array-based clear: just fill with sentinel value
+    #[inline]
     fn clear_see_cache(&mut self) {
-        self.see_cache.clear();
+        self.see_cache = [SEE_CACHE_NONE; 64];
     }
 
     /// Static Exchange Evaluation (SEE) - compute net material gain of capture sequence
@@ -1470,9 +1492,10 @@ impl Search {
     /// # Returns
     /// Net material gain/loss (positive = winning capture, negative = losing)
     fn see(&mut self, target_sq: usize, attacker_color: Color) -> i16 {
-        // Check cache first
-        if let Some(&cached_score) = self.see_cache.get(&target_sq) {
-            return cached_score;
+        // Check cache first - array-based O(1) lookup
+        let cached = self.see_cache[target_sq];
+        if cached != SEE_CACHE_NONE {
+            return cached;
         }
 
         // Increment expensive SEE evaluation counter
@@ -1484,7 +1507,7 @@ impl Search {
                 self.piece_value(&victim_kind)
             } else {
                 // Empty square - no capture
-                self.see_cache.insert(target_sq, 0);
+                self.see_cache[target_sq] = 0;
                 return 0;
             };
 
@@ -1576,7 +1599,7 @@ impl Search {
             see_acc as i16
         };
 
-        self.see_cache.insert(target_sq, see_score);
+        self.see_cache[target_sq] = see_score;
         see_score
     }
 

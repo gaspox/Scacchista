@@ -1,0 +1,10 @@
+8a71dac Phase 3.4: Bishop Pair implementation and verification details
+09ca171 Phase 3.4: Bishop Pair completed and verified
+1892d2c Phase 3.3: Passed Pawns (Rank bonus + Support)
+8a0bc35 Phase 3.2: Pawn Structure (Isolated, Doubled, Backward)
+f9fa457 Docs: Update implementation_plan.md with Phase 3.1 verification details
+39d046c Fix: Clean up implementation_plan.md text corruption and add 2.4 benchmarks
+085e98c Phase 2.4: Countermove Heuristic implementation and benchmarks
+45aa6d9 Fix: Correctly mark Phase 2.2 as COMPLETED in implementation plan
+24e985f Phase 2.3: SEE Pruning implementation and verification
+1efaa44 Docs: Update implementation plan with Benchmark results (+19% NPS)

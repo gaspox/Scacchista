@@ -1,0 +1,70 @@
+warning: unused import: `Duration`
+ --> src/bin/tournament.rs:4:26
+  |
+4 | use std::time::{Instant, Duration};
+  |                          ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::thread`
+ --> src/bin/tournament.rs:5:5
+  |
+5 | use std::thread;
+  |     ^^^^^^^^^^^
+
+warning: variable `last_move_str` is assigned to, but never used
+   --> src/bin/tournament.rs:111:9
+    |
+111 |     let mut last_move_str = String::new();
+    |         ^^^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_last_move_str` instead
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `last_move_str` is never read
+   --> src/bin/tournament.rs:170:13
+    |
+170 |             last_move_str = mv;
+    |             ^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `last_move_str` is never read
+   --> src/bin/tournament.rs:147:13
+    |
+147 |             last_move_str = mv;
+    |             ^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: `scacchista` (bin "tournament") generated 5 warnings (run `cargo fix --bin "tournament" -p scacchista` to apply 2 suggestions)
+    Finished `release` profile [optimized] target(s) in 0.01s
+     Running `target/release/tournament`
+Starting tournament: ./scacchista_v0.5 vs ./scacchista_v0.4
+Rounds: 10, TC: 10000ms + 100ms
+Game 1/10 (v0.5 vs v0.4)...  W:g1f3 (50) B:b8c6 (-50) W:b2b3 (-25) B:g8f6 (5) W:d2d4 (-50) B:f6g4 (60) W:d4d5 (0) B:c6b4 (0) W:h2h4 (51) B:g4f2 (0) W:e1f2 (0) B:e7e5 (0) W:f3h2 (-126) B:f8c5 (0) W:f2f3 (0) B:d8h4 (0) W:c1g5 (-261) B:e5e4 (30001) [Mate detected]
+0-1 (Black wins)
+Game 2/10 (v0.4 vs v0.5)...  W:g1f3 (50) B:b8c6 (-50) W:c2c4 (0) B:g8f6 (0) W:d2d3 (-50) B:f6g4 (75) W:c1f4 (0) B:g4f2 (0) W:e1f2 (0) B:b7b5 (0) W:f2g1 (0) B:b5c4 (-169) W:d3c4 (0) B:e7e6 (-383) W:d1c2 (0) B:f8e7 (0) W:b2b4 (0) B:e8g8 (0) W:h2h4 (196) B:c6b4 (0) W:b1d2 (150) B:b4c2 (0) W:a1c1 (-755) B:e7c5 (0) W:e2e3 (0) B:c2b4 (720) W:h4h5 (0) B:b4a2 (0) W:c1e1 (-795) B:d8f6 (840) W:g1h2 (0) B:c8b7 (0) W:f4c7 (-774) B:b7f3 (1104) W:g2f3 (0) B:a2b4 (0) W:c7g3 (0) B:f6b2 (740) W:f3f4 (0) B:b2d2 (0) W:f1e2 (0) B:d2e3 (1241) W:e1d1 (0) B:e3e2 (1685) W:h2h3 (0) B:e2h5 (1650) W:h3g2 (-1675) B:h5e2 (1685) W:g2h3 (0) B:c5f2 (1645) W:g3f2 (0) B:e2f2 (0) W:h1f1 (0) B:f2e2 (0) W:d1b1 (-1775) B:e2c4 (1785) W:b1c1 (0) B:c4a2 (0) W:c1a1 (0) B:a2b2 (1790) W:a1b1 (0) B:b2d4 (0) W:b1d1 (0) B:b4d3 (1820) W:h3g3 (0) B:d4c4 (0) W:f4f5 (0) B:e6f5 (1840) W:f1f5 (0) B:d7d5 (1865) W:d1f1 (0) B:g7g6 (1865) W:f5f6 (0) B:h7h5 (1870) W:g3g2 (0) B:d5d4 (1900) W:g2g1 (0) B:h5h4 (1910) W:g1h2 (0) B:c4c7 (1965) W:h2h1 (0) B:d3b2 (1940) W:f6f2 (0) B:c7c3 (0) W:f1b1 (0) B:f8b8 (1960) W:f2f1 (0) B:h4h3 (2025) W:f1f2 (-2060) B:d4d3 (0) W:b1f1 (0) B:d3d2 (0) W:h1h2 (-2250) B:d2d1q (2255) W:f1d1 (0) B:b2d1 (2285) W:f2e2 (0) B:b8b1 (2545) W:e2a2 (0) B:d1e3 (0) W:a2a4 (0) B:c3c7 (30000) [Mate detected]
+0-1 (Black wins)
+Game 3/10 (v0.5 vs v0.4)...  W:g1f3 (50) B:b8c6 (-50) W:b2b3 (-25) B:g8f6 (5) W:f3g5 (0) B:f6g4 (0) W:g5f7 (0) B:e8f7 (-80) W:b1c3 (0) B:f7g8 (0) W:f2f4 (0) B:d7d6 (0) W:h2h4 (0) B:g4f2 (0) W:e1f2 (0) B:c6e5 (347) W:d2d4 (-290) B:e5d7 (0) W:f2g1 (0) B:b7b6 (-170) W:e2e4 (195) B:e7e6 (0) W:f4f5 (52) B:e6f5 (0) W:f1c4 (64) B:d6d5 (-64) W:c4d5 (30001) [Mate detected]
+1-0 (White wins)
+Game 4/10 (v0.4 vs v0.5)...  W:g1f3 (50) B:b8c6 (-50) W:c2c4 (0) B:g8f6 (0) W:f3g5 (-56) B:d7d6 (-15) W:g5f7 (0) B:e8f7 (0) W:d1a4 (44) B:f7g8 (0) W:a4c6 (-50) B:b7c6 (0) W:b1c3 (0) B:e7e5 (0) W:e2e4 (-938) B:c8e6 (958) W:f1d3 (0) B:h7h6 (0) W:e1g1 (0) B:g7g5 (785) W:c4c5 (-720) B:d6c5 (0) W:d3a6 (0) B:f8d6 (930) W:a6b7 (-930) B:a8b8 (0) W:b7c6 (-826) B:g5g4 (865) W:d2d3 (0) B:h6h5 (858) W:b2b3 (-890) B:b8b6 (0) W:c6a8 (0) B:f6e4 (0) W:a8e4 (-685) B:b6a6 (650) W:c1e3 (0) B:a6a3 (585) W:c3b5 (-545) B:h8h7 (0) W:b5a3 (0) B:h5h4 (0) W:e4h7 (-20) B:g8h8 (-285) W:a3b1 (283) B:h8h7 (0) W:b1c3 (0) B:h4h3 (40) W:g2h3 (0) B:g4h3 (0) W:c3e4 (0) B:d8g8 (0) W:e4g5 (0) B:h7h8 (0) W:a1e1 (-45) B:d6e7 (240) W:f2f4 (0) B:e5f4 (0) W:e3f4 (0) B:e7g5 (0) W:f4g3 (0) B:g8g6 (340) W:f1f8 (0) B:h8g7 (0) W:f8f2 (0) B:g5d8 (335) W:f2f3 (-340) B:e6d5 (350) W:f3e3 (-335) B:c7c6 (355) W:e1e2 (-365) B:d8f6 (385) W:g1f1 (0) B:f6d4 (385) W:e3e8 (-485) B:g6f5 (475) W:f1e1 (0) B:d4c3 (490) W:e1d1 (0) B:d5f3 (515) W:e8e7 (-535) B:g7h8 (535) W:e7e8 (-535) B:h8h7 (0) W:e8e7 (0) B:c3g7 (0) W:d1d2 (0) B:f3e2 (550) W:d2e2 (0) B:a7a5 (540) W:e7b7 (-550) B:f5e6 (550) W:e2d1 (0) B:e6d5 (0) W:d1d2 (0) B:a5a4 (0) W:b3a4 (0) B:c5c4 (680) W:d3d4 (0) B:d5d4 (690) W:d2c1 (0) B:c4c3 (0) W:g3e1 (0) B:d4f4 (0) W:c1d1 (0) B:f4a4 (900) W:d1c1 (0) B:a4f4 (0) W:c1d1 (0) B:f4f3 (0) W:d1c1 (0) B:f3e3 (990) W:c1d1 (0) B:e3d3 (980) W:d1c1 (0) B:h7g6 (1015) W:e1c3 (0) B:d3c3 (0) W:c1b1 (0) B:c3d2 (1110) W:b7g7 (0) B:g6g7 (0) W:a2a4 (0) B:d2h2 (1660) W:a4a5 (0) B:h2f2 (30000) [Mate detected]
+0-1 (Black wins)
+Game 5/10 (v0.5 vs v0.4)...  W:g1f3 (50) B:b8c6 (-50) W:b2b3 (-25) B:g8f6 (5) W:f3g5 (0) B:f6g4 (0) W:g5f7 (0) B:e8f7 (-120) W:b1c3 (0) B:f7g8 (0) W:f2f4 (0) B:d7d6 (0) W:h2h4 (0) B:g4f2 (0) W:e1f2 (0) B:c6e5 (347) W:d2d4 (-290) B:e5d7 (0) W:f2g1 (0) B:b7b6 (-170) W:e2e4 (195) B:e7e6 (0) W:f4f5 (52) B:e6f5 (0) W:f1c4 (64) B:d6d5 (-64) W:c4d5 (30001) [Mate detected]
+1-0 (White wins)
+Game 6/10 (v0.4 vs v0.5)...  W:g1f3 (50) B:b8c6 (-50) W:c2c4 (0) B:g8f6 (0) W:f3g5 (-56) B:d7d6 (-15) W:g5f7 (0) B:e8f7 (0) W:d1a4 (44) B:f7g8 (0) W:a4c6 (-50) B:b7c6 (0) W:b1c3 (0) B:e7e5 (0) W:e2e4 (0) B:c8e6 (958) W:f1d3 (0) B:h7h6 (0) W:e1g1 (0) B:g7g5 (785) W:c4c5 (-720) B:d6c5 (0) W:d3a6 (0) B:f8d6 (930) W:a6b7 (-930) B:a8b8 (0) W:b7c6 (0) B:c5c4 (885) W:h2h3 (-890) B:d6c5 (890) W:b2b4 (0) B:c5b4 (0) W:c3d1 (-1035) B:b4d6 (1049) W:d1e3 (0) B:e6f7 (980) W:f2f3 (-975) B:d6b4 (960) W:e3c4 (0) B:f7c4 (0) W:f1f2 (-1175) B:h6h5 (1109) W:d2d3 (-1130) B:c4d3 (1135) W:c1g5 (0) B:g8g7 (0) W:f3f4 (-1110) B:d3c2 (1086) W:f2c2 (-744) B:d8d4 (765) W:g1h2 (-765) B:d4a1 (0) W:g5f6 (-1230) B:g7f6 (1225) W:f4f5 (0) B:h5h4 (0) W:c6d5 (-1255) B:b4d6 (1255) W:c2d2 (-1240) B:d6c5 (0) W:d2d1 (0) B:a1b2 (1230) W:d5e6 (0) B:b2f2 (1320) W:e6c4 (0) B:b8b2 (0) W:c4e2 (0) B:b2a2 (1970) W:d1f1 (0) B:f2e2 (0) W:f1f2 (0) B:e2f2 (30000) [Mate detected]
+0-1 (Black wins)
+Game 7/10 (v0.5 vs v0.4)...  W:g1f3 (50) B:b8c6 (-50) W:b2b3 (-25) B:g8f6 (5) W:f3g5 (0) B:f6g4 (0) W:g5f7 (0) B:e8f7 (-120) W:b1c3 (0) B:f7g8 (0) W:f2f4 (0) B:d7d6 (0) W:h2h4 (0) B:g4f2 (0) W:e1f2 (0) B:c6e5 (347) W:d2d4 (-290) B:e5d7 (0) W:f2g1 (0) B:b7b6 (-170) W:h4h5 (190) B:d7f6 (-205) W:c3a4 (121) B:f6d5 (-155) W:c2c4 (0) B:d5f6 (-175) W:e2e3 (0) B:f6e4 (0) W:d4d5 (215) B:c8b7 (-215) W:h5h6 (267) B:g7h6 (-62) W:c4c5 (0) B:b6c5 (0) W:f1d3 (0) B:b7d5 (0) W:d3e4 (86) B:d5e4 (0) W:a4c5 (0) B:d6c5 (0) W:d1d8 (470) B:a8d8 (425) W:h1h3 (-485) B:f8g7 (620) W:h3g3 (-635) B:e4g6 (640) W:g3g6 (-645) B:h7g6 (0) W:a1b1 (0) B:d8d1 (660) W:g1h2 (0) B:g7c3 (700) W:e3e4 (0) B:c3d2 (685) W:c1d2 (0) B:d1b1 (705) W:d2c3 (0) B:h8h7 (705) W:e4e5 (0) B:h7f7 (700) W:c3d2 (0) B:b1b2 (720) W:e5e6 (0) B:f7f5 (785) W:d2a5 (0) B:b2e2 (770) W:a5c7 (0) B:e2e6 (0) W:h2g1 (0) B:e6e1 (830) W:g1f2 (0) B:e1a1 (0) W:a2a4 (0) B:a1b1 (840) W:g2g4 (0) B:f5f7 (855) W:a4a5 (0) B:b1b2 (0) W:f2g1 (0) B:b2b3 (885) W:g4g5 (-895) B:h6g5 (945) W:f4g5 (0) B:f7f5 (985) W:g1h1 (0) B:b3b2 (1145) W:c7h2 (0) B:f5f1 (1225) W:h2g1 (0) B:b2b1 (1295) W:h1g2 (0) B:f1g1 (1340) W:g2f3 (0) B:b1a1 (1465) W:f3f2 (-1510) B:g1g5 (1520) W:f2e3 (0) B:e7e5 (1525) W:e3d3 (0) B:g5g4 (1545) W:d3c3 (-1555) B:e5e4 (1610) W:c3d2 (0) B:a1a5 (1645) W:d2e3 (0) B:c5c4 (1715) W:e3e2 (-2345) B:c4c3 (2320) W:e2e3 (0) B:a5a2 (2380) W:e3d4 (0) B:c3c2 (2470) W:d4d5 (0) B:g8f7 (0) W:d5c6 (0) B:c2c1q (0) W:c6b7 (0) B:e4e3 (30000) [Mate detected]
+0-1 (Black wins)
+Game 8/10 (v0.4 vs v0.5)...  W:g1f3 (50) B:b8c6 (-50) W:c2c4 (0) B:g8f6 (0) W:f3g5 (-56) B:d7d6 (-15) W:g5f7 (0) B:e8f7 (0) W:d1a4 (44) B:f7g8 (0) W:a4c6 (-50) B:b7c6 (0) W:b1c3 (0) B:e7e5 (0) W:e2e4 (0) B:c8e6 (958) W:f1d3 (0) B:h7h6 (0) W:e1g1 (0) B:h6h5 (790) W:c4c5 (0) B:e6a2 (820) W:a1a2 (-499) B:f6e4 (635) W:c3e4 (0) B:d6c5 (0) W:d3c4 (0) B:d8d5 (0) W:c4d5 (0) B:g8h7 (0) W:b2b3 (0) B:c6d5 (0) W:e4g5 (55) B:h7g8 (-55) W:g5e6 (0) B:f8d6 (-65) W:a2c2 (65) B:d5d4 (0) W:e6c5 (60) B:h5h4 (-70) W:f2f3 (60) B:a8b8 (-65) W:f1d1 (0) B:b8b5 (-65) W:c5e4 (-25) B:b5b3 (0) W:e4d6 (-20) B:c7d6 (0) W:c2c8 (-25) B:g8h7 (0) W:c8c7 (-30) B:a7a5 (35) W:d2d3 (-35) B:b3c3 (0) W:c7d7 (0) B:a5a4 (-55) W:d7d6 (55) B:h8b8 (-55) W:c1g5 (0) B:a4a3 (0) W:d1a1 (0) B:b8b2 (0) W:d6d7 (0) B:a3a2 (0) W:a1d1 (0) B:b2b1 (0) W:d1f1 (-1010) B:a2a1q (1325) W:g5c1 (-1640) B:b1c1 (0) W:d7g7 (0) B:h7g7 (0) W:g2g4 (0) B:a1b2 (0) W:g4g5 (0) B:c1f1 (30000) [Mate detected]
+0-1 (Black wins)
+Game 9/10 (v0.5 vs v0.4)...  W:g1f3 (50) B:b8c6 (-50) W:b2b3 (-25) B:g8f6 (5) W:f3g5 (0) B:f6g4 (0) W:g5f7 (0) B:e8f7 (-80) W:b1c3 (0) B:f7g8 (0) W:f2f4 (0) B:d7d6 (0) W:h2h4 (0) B:g4f2 (0) W:e1f2 (0) B:c6e5 (347) W:d2d4 (-290) B:e5d7 (0) W:f2g1 (0) B:e7e6 (-185) W:c3b1 (100) B:f8e7 (-105) W:h4h5 (150) B:d7e5 (0) W:h5h6 (129) B:g7h6 (76) W:b3b4 (-74) B:e5g6 (0) W:e2e4 (0) B:d6d5 (0) W:h1h6 (0) B:d5e4 (0) W:h6g6 (0) B:h7g6 (0) W:b4b5 (-240) B:e7f6 (0) W:b1c3 (-140) B:c7c5 (0) W:b5c6 (0) B:b7c6 (235) W:c3e4 (0) B:d8f8 (45) W:f1c4 (-35) B:a7a5 (40) W:a2a4 (-35) B:c8d7 (20) W:e4f6 (-20) B:f8f6 (0) W:c1e3 (0) B:f6h4 (0) W:c4b3 (-50) B:h4h1 (50) W:g1f2 (0) B:h1h4 (50) W:f2g1 (0) B:h4h1 (45) W:g1f2 (0) B:h1h6 (0) W:f2f1 (-45) B:h6h7 (30) W:c2c4 (-35) B:h7h1 (35) W:f1f2 (0) B:h1h4 (0) W:f2f1 (0) B:h4g3 (45) W:d1f3 (0) B:h8h1 (40) W:e3g1 (0) B:g3f3 (50) W:g2f3 (0) B:h1h4 (40) W:g1e3 (0) B:h4h1 (40) W:f1g2 (-525) B:h1a1 (0) W:d4d5 (0) B:a1a3 (775) W:d5d6 (0) B:a3b3 (760) W:e3c1 (0) B:b3c3 (990) W:c1d2 (0) B:c3c2 (1110) W:g2h3 (0) B:c2d2 (0) W:h3h4 (-1440) B:d2d6 (0) W:h4g3 (-1520) B:c6c5 (1520) W:g3h4 (-1595) B:d6d4 (1620) W:h4g5 (0) B:g8h7 (1655) W:g5h4 (0) B:e6e5 (1715) W:h4g3 (0) B:e5f4 (1725) W:g3f2 (0) B:a8b8 (0) W:f2f1 (0) B:b8b1 (30000) [Mate detected]
+0-1 (Black wins)
+Game 10/10 (v0.4 vs v0.5)...  W:g1f3 (50) B:b8c6 (-50) W:c2c4 (0) B:g8f6 (0) W:f3g5 (-56) B:d7d6 (-15) W:g5f7 (0) B:e8f7 (0) W:d1a4 (44) B:f7g8 (0) W:a4c6 (-50) B:b7c6 (976) W:b1c3 (0) B:e7e5 (0) W:e2e4 (0) B:c8e6 (958) W:f1d3 (0) B:h7h6 (0) W:e1g1 (0) B:h6h5 (790) W:c4c5 (0) B:e6a2 (820) W:a1a2 (-499) B:f6e4 (635) W:c3e4 (0) B:d6c5 (0) W:d3c4 (0) B:d8d5 (0) W:c4d5 (0) B:g8h7 (0) W:d5c6 (591) B:a8d8 (0) W:d2d3 (550) B:d8d3 (0) W:e4f6 (640) B:g7f6 (0) W:c6e4 (640) B:h7g8 (0) W:e4d3 (660) B:a7a6 (-680) W:a2a6 (695) B:g8g7 (0) W:h2h3 (685) B:h5h4 (-670) W:f2f3 (655) B:f8d6 (0) W:f3f4 (665) B:e5f4 (0) W:c1f4 (670) B:h8d8 (0) W:f4d6 (770) B:c7d6 (0) W:f1f4 (820) B:g7f7 (0) W:f4h4 (0) B:d6d5 (-870) W:h4h6 (870) B:c5c4 (0) W:h6f6 (880) B:f7g8 (0) W:f6g6 (875) B:g8f8 (0) W:d3f5 (875) B:d5d4 (0) W:f5e6 (0) B:c4c3 (0) W:a6a7 (0) B:d8d7 (0) W:a7d7 (30000) [Mate detected]
+1-0 (White wins)
+
+--- Final Results ---
+v0.5 Score: 6
+v0.4 Score: 4
+Elo Difference (v0.5 - v0.4): +70.4

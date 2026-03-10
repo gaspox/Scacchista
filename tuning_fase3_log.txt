@@ -1,0 +1,34 @@
+============================================
+FASE 3: TUNING MANUALE PARAMETRI
+============================================
+
+=== Config 1: Conservative ===
+futility_margin=150, lmr_base_reduction=1, qsearch_depth=4
+
+warning: `scacchista` (bin "tournament") generated 5 warnings (run `cargo fix --bin "tournament" -p scacchista` to apply 2 suggestions)
+    Finished `release` profile [optimized] target(s) in 7.21s
+Test posizione iniziale:
+info depth 6 score cp 50 time 362
+
+=== Config 2: Aggressive ===
+futility_margin=250, lmr_base_reduction=3, qsearch_depth=5
+
+warning: `scacchista` (bin "tournament") generated 5 warnings (run `cargo fix --bin "tournament" -p scacchista` to apply 2 suggestions)
+    Finished `release` profile [optimized] target(s) in 6.82s
+Test posizione iniziale:
+info depth 6 score cp 50 time 525
+
+=== Config 3: Delta Pruning Fix Test ===
+futility_margin=180, enable_qsearch_optimizations=true
+
+warning: `scacchista` (bin "tournament") generated 5 warnings (run `cargo fix --bin "tournament" -p scacchista` to apply 2 suggestions)
+    Finished `release` profile [optimized] target(s) in 6.67s
+Test posizione iniziale:
+info depth 6 score cp 50 time 182
+
+============================================
+Tuning completato. Binari creati:
+  - scacchista_v0.5_config1 (conservativo)
+  - scacchista_v0.5_config2 (aggressivo)
+  - scacchista_v0.5_config3 (delta pruning on)
+============================================

@@ -1,0 +1,50 @@
+8a71dac Phase 3.4: Bishop Pair implementation and verification details
+09ca171 Phase 3.4: Bishop Pair completed and verified
+1892d2c Phase 3.3: Passed Pawns (Rank bonus + Support)
+8a0bc35 Phase 3.2: Pawn Structure (Isolated, Doubled, Backward)
+f9fa457 Docs: Update implementation_plan.md with Phase 3.1 verification details
+39d046c Fix: Clean up implementation_plan.md text corruption and add 2.4 benchmarks
+085e98c Phase 2.4: Countermove Heuristic implementation and benchmarks
+45aa6d9 Fix: Correctly mark Phase 2.2 as COMPLETED in implementation plan
+24e985f Phase 2.3: SEE Pruning implementation and verification
+1efaa44 Docs: Update implementation plan with Benchmark results (+19% NPS)
+06fec44 CI: Fix format issues
+2a46302 Fix CI Failures: i16::MIN panic, TT bounds bug, and Timeout score logic
+d5600f0 docs: polish portfolio presentation (mermaid diagrams, performance graph, code hygiene)
+d415a1e docs: update roadmap, changelog and readme for v0.5.0-dev
+84d62d8 feat: implement PVS at root and fix futility pruning mate score bug
+fe35877 Phase 1 Complete: Lock-free TT, Delta Pruning, Bitboard Eval
+8c030f2 Fix move generation bugs and time management; add comprehensive test suite v0.4.1
+591c267 Add tactical suite runner and sample datasets
+4688a98 Add simple endgame recognition
+723459e Improve draw detection and EP handling
+ff90a62 docs: Update AGENTS.md with essential commands and code style guidelines
+dcafdff fix: Resolve Issue #1 (Qxe7 blunder) with critical king safety in qsearch
+2e45055 chore: Professional repository cleanup and compliance
+b6c54b2 fix: Increase castling rights loss penalty (-70 → -120 cp) + practical testing
+d356c44 feat: Implement GrandMaster strategic improvements (king safety, check ext, pawn bonuses)
+43f9ce0 docs: Add final validation report for v0.3.0 release
+dd5927e fix: Display actual completed depth instead of hardcoded depth 3 (Bug #3)
+0697dbf fix: Add time increment support (winc/binc) to time management (Bug #4)
+aa0e272 fix: Eliminate multi-threading score corruption and mutex poisoning (Bug #2)
+6de5831 docs: Add Checkpoint 1 validation report - Phase 1 PASSED ✅
+d2d19bb fix: Eliminate time expiration score corruption (Bug #1) - CRITICAL FIX
+28f334a test: Add time control bug reproduction tests (Phase 0)
+7ab207f fix: Correct UCI author to Gaspox with AI co-author attribution
+af46349 feat: Add Lucas Chess integration wrapper and setup guide
+c465c11 docs: Reorganize documentation into structured docs/ directory
+f94b960 docs: Add comprehensive HANDOFF.md documentation
+2b977cd perf: Optimize eval loop with direct bitboard iteration (+8-9% speedup)
+06f0c82 refactor: Broadcast lazy-SMP architecture (needs artificial diversity)
+87bd947 fix: Enable true TT sharing in lazy-SMP multi-threaded search
+650db68 Merge branch 'master' of github.com:gaspox/Scacchista
+c75b3c3 chore: Add git pull permission
+8b2bac3 Merge feature/uci-phase3: Strategic optimizations and UCI fixes
+adb9b0b chore: Add git merge permission to local settings
+fac9fe1 chore: Update Claude Code permissions for final testing session
+c56dfb5 perf: Add evaluate_lazy() - tested and NOT deployed (regression)
+4e50c11 perf: Optimize TT operations with incremental zobrist and improved replacement
+f9be0ae fix: Correct UCI `go depth N` command to respect depth without timeout
+dc1939b chore: Update Claude Code permissions for benchmarking
+3f8c7c4 docs: Add comprehensive performance results and final report
+fe92431 feat: Implement evaluation optimizations - 2.6x speedup achieved!

@@ -1,0 +1,2 @@
+.[1;33mr[31mw[4;32mx[0m[33mr[1;90m-[0m[32mx[33mr[1;90m-[0m[32mx[0m [1;32m560k[0m [1;33mgaspare[0m [34m19 feb 01:48[0m [36mtarget/release/[1;32mscacchista[0m
+.[1;33mr[31mw[4;32mx[0m[33mr[1;90m-[0m[32mx[33mr[1;90m-[0m[32mx[0m [1;32m572k[0m [1;33mgaspare[0m [34m19 feb 00:20[0m [1;32mscacchista_v0.5[0m
