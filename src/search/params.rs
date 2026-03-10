@@ -62,13 +62,13 @@ impl Default for SearchParams {
             null_move_min_depth: 2,
             enable_lmr: true, // Re-enabled after null-move tested
             lmr_min_depth: 3,
-            lmr_base_reduction: 2,
+            lmr_base_reduction: 1,
             enable_futility_pruning: true, // Re-enabled after LMR tested
-            futility_margin: 200,          // 2.0 pawns (conservative to avoid missing tactics)
+            futility_margin: 150,          // 2.0 pawns (conservative to avoid missing tactics)
             futility_min_depth: 3,
             killer_moves_count: 2,
             qsearch_depth: 4,
-            enable_qsearch_optimizations: true,
+            enable_qsearch_optimizations: false,  // FIX v0.5.1: disabilitato - Delta pruning troppo aggressivo
         }
     }
 }
