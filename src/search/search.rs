@@ -62,10 +62,10 @@ pub struct Search {
     /// History heuristic table [color][piece][from_sq][to_sq]
     history: [[[i16; 64]; 6]; 2], // [color][piece][square]
 
-    /// SEE cache for current position [square] -> score
-    /// Array-based cache for O(1) access without hashing overhead
+    /// SEE cache for current position [square][color] -> score
+    /// Array-based cache: indices 0-63 for White, 64-127 for Black
     /// Uses SEE_CACHE_NONE as sentinel for empty entries
-    see_cache: [i16; 64],
+    see_cache: [i16; 128],
 
     /// Countermove heuristic table [piece][to_sq]
     /// Stores the move that caused beta cutoff in response to a previous move
@@ -104,7 +104,7 @@ impl Search {
             killer_moves: vec![vec![0; killer_moves_count]; max_ply], // [ply][slot]
             history: [[[0; 64]; 6]; 2],
             countermoves: [[0; 64]; 6],
-            see_cache: [SEE_CACHE_NONE; 64],
+            see_cache: [SEE_CACHE_NONE; 128],
             stop_flag: None,
             time_expired: false,
             time_check_counter: 0,
@@ -1475,7 +1475,7 @@ impl Search {
     /// Array-based clear: just fill with sentinel value
     #[inline]
     fn clear_see_cache(&mut self) {
-        self.see_cache = [SEE_CACHE_NONE; 64];
+        self.see_cache = [SEE_CACHE_NONE; 128];
     }
 
     /// Static Exchange Evaluation (SEE) - compute net material gain of capture sequence
@@ -1492,8 +1492,15 @@ impl Search {
     /// # Returns
     /// Net material gain/loss (positive = winning capture, negative = losing)
     fn see(&mut self, target_sq: usize, attacker_color: Color) -> i16 {
+        // Calculate cache index based on square and attacker color
+        let cache_idx = if attacker_color == Color::White {
+            target_sq
+        } else {
+            target_sq + 64
+        };
+        
         // Check cache first - array-based O(1) lookup
-        let cached = self.see_cache[target_sq];
+        let cached = self.see_cache[cache_idx];
         if cached != SEE_CACHE_NONE {
             return cached;
         }
@@ -1507,7 +1514,7 @@ impl Search {
                 self.piece_value(&victim_kind)
             } else {
                 // Empty square - no capture
-                self.see_cache[target_sq] = 0;
+                self.see_cache[cache_idx] = 0;
                 return 0;
             };
 
@@ -1599,7 +1606,13 @@ impl Search {
             see_acc as i16
         };
 
-        self.see_cache[target_sq] = see_score;
+        // Calculate cache index (same as at the beginning)
+        let cache_idx = if attacker_color == Color::White {
+            target_sq
+        } else {
+            target_sq + 64
+        };
+        self.see_cache[cache_idx] = see_score;
         see_score
     }
 

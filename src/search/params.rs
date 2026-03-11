@@ -78,7 +78,7 @@ impl Default for SearchParams {
             killer_moves_count: 2,
             qsearch_depth: 4,
             enable_qsearch_optimizations: false,  // FIX v0.5.1: disabilitato - Delta pruning troppo aggressivo
-            enable_razoring: true,
+            enable_razoring: false,
             razoring_margin: 300,  // Conservative: 3 pawns
             razoring_max_depth: 1, // Only at depth 1 for safety
         }
