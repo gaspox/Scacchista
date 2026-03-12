@@ -35,9 +35,6 @@ pub struct SearchStats {
     /// Futility pruned nodes
     pub futility_pruned: u64,
 
-    /// Razoring pruned nodes
-    pub razoring_pruned: u64,
-
     /// SEE evaluations performed
     pub see_evals: u64,
 
@@ -53,11 +50,14 @@ pub struct SearchStats {
     /// Nodes per second rate
     pub nps: u64,
 
-    /// Countermove cutoffs
-    pub countermove_cutoffs: u64,
-
     /// FIX Bug #3: Track last completed depth for UCI info display
     pub completed_depth: u8,
+
+    /// Countermove heuristic cutoffs
+    pub countermove_cutoffs: u64,
+
+    /// Razoring pruned nodes
+    pub razoring_pruned: u64,
 }
 
 impl SearchStats {
@@ -131,11 +131,6 @@ impl SearchStats {
         self.futility_pruned += 1;
     }
 
-    /// Increment razoring pruning count
-    pub fn inc_razoring_pruned(&mut self) {
-        self.razoring_pruned += 1;
-    }
-
     /// Increment SEE evaluation count
     pub fn inc_see_eval(&mut self) {
         self.see_evals += 1;
@@ -144,6 +139,11 @@ impl SearchStats {
     /// Increment countermove cutoff count
     pub fn inc_countermove_cutoff(&mut self) {
         self.countermove_cutoffs += 1;
+    }
+
+    /// Increment razoring pruning count
+    pub fn inc_razoring_pruned(&mut self) {
+        self.razoring_pruned += 1;
     }
 
     /// Reset all statistics
@@ -168,10 +168,8 @@ impl SearchStats {
         );
         println!("Alpha-Beta cutoffs: {}", self.cutoffs);
         println!("Null-move cutoffs: {}", self.null_move_cutoffs);
-        println!("Countermove cutoffs: {}", self.countermove_cutoffs);
         println!("LMR reductions: {}", self.lmr_reductions);
         println!("Futility pruned: {}", self.futility_pruned);
-        println!("Razoring pruned: {}", self.razoring_pruned);
         println!("SEE evaluations: {}", self.see_evals);
         println!("Search time: {} ms", self.search_time.as_millis());
         println!("Nodes per second: {}", self.nps);

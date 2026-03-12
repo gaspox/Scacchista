@@ -3,7 +3,7 @@
 [![CI](https://github.com/gaspox/Scacchista/actions/workflows/ci.yml/badge.svg)](https://github.com/gaspox/Scacchista/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75+-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-0.5.0--dev-green.svg)](https://github.com/gaspox/Scacchista/releases)
+[![Version](https://img.shields.io/badge/version-0.4.1-green.svg)](https://github.com/gaspox/Scacchista/releases)
 
 A UCI-compliant chess engine written in Rust, featuring alpha-beta search with parallel lazy-SMP threading and hand-crafted evaluation.
 
@@ -73,34 +73,17 @@ cargo test --test perft_deep
 cargo test -- --nocapture
 ```
 
-## Performance Evolution
+## Performance
 
-Scacchista has seen significant performance improvements through data-driven optimization.
+### Search Speed
 
-```mermaid
-xychart-beta
-    title "Search Speed (Nodes per Second)"
-    x-axis ["v0.3.0", "v0.4.0", "v0.4.1", "v0.5.0-dev"]
-    y-axis "NPS" 0 --> 700000
-    bar [284000, 350000, 608000, 620000]
-```
+| Depth | Time (startpos) |
+|-------|-----------------|
+| 6 | ~0.8s |
+| 8 | ~14s |
+| 10 | ~3 min |
 
-*Note: Benchmarks run on standard hardware (single thread) from startpos.*
-
-### Perft Speed
-~4.3M nodes/sec (Move Generation only)
-
-## Demo
-
-```text
-> position startpos moves e2e4 c7c5
-> go depth 10
-info depth 1 seldepth 1 multipv 1 score cp 33 nodes 26 nps 26000 tbhits 0 time 1 pv g1f3
-info depth 2 seldepth 2 multipv 1 score cp 45 nodes 84 nps 84000 tbhits 0 time 1 pv g1f3 d7d6
-...
-info depth 10 seldepth 14 multipv 1 score cp 28 nodes 154320 nps 615000 tbhits 1450 time 251 pv g1f3 d7d6 d2d4 c5d4 f3d4 g8f6 b1c3 a7a6 f1e2 e7e5
-bestmove g1f3
-```
+**Perft**: ~4.3M nodes/sec
 
 ### Strength Estimate
 
@@ -173,9 +156,7 @@ Scacchista uses the [`shakmaty`](https://github.com/niklasf/shakmaty) crate (GPL
 
 See [Releases](https://github.com/gaspox/Scacchista/releases) for precompiled binaries.
 
-Latest: **v0.5.0-dev** (Work in Progress) - Principal Variation Search (PVS) at root, Futility Pruning fix for mate scores, and major performance optimizations from v0.4.1.
-
-See [v0.4.1](https://github.com/gaspox/Scacchista/releases/tag/v0.4.1) for the last stable version with capture-only qsearch, lock-free TT, and bitboard evaluation.
+Latest: **v0.4.1** - Bug fixes (move generation for pawn promotions, time management for fixed movestogo/movestogo), and expanded regression test suite (tactical, draw detection, threading stress).
 
 ## Acknowledgments
 
