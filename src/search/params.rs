@@ -49,6 +49,12 @@ pub struct SearchParams {
     /// Enable qsearch optimizations (Delta Pruning, Dedicated Capture Gen)
     /// Used for benchmarking
     pub enable_qsearch_optimizations: bool,
+
+    /// Enable razoring pruning (ultra-conservative, depth 1 only)
+    pub enable_razoring: bool,
+
+    /// Razoring margin in centipawns (very conservative to avoid missing tactics)
+    pub razoring_margin: i16,
 }
 
 impl Default for SearchParams {
@@ -69,6 +75,8 @@ impl Default for SearchParams {
             killer_moves_count: 2,
             qsearch_depth: 4,
             enable_qsearch_optimizations: false,  // FIX v0.5.1: disabilitato - Delta pruning troppo aggressivo
+            enable_razoring: true,   // v0.5.3: Abilitato con margine ultra-conservativo
+            razoring_margin: 50,     // 0.5 pawns (molto conservativo)
         }
     }
 }

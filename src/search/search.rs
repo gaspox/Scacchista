@@ -472,15 +472,44 @@ impl Search {
         // Note: We check for checkmate/stalemate after move generation
         // 50-move rule and threefold repetition should be handled by game controller when possible,
         // but we can still exit early here for draw states
-        if self.board.is_insufficient_material()
-            || self.board.is_50_move_draw()
-            || self.board.is_threefold_repetition()
-        {
-            return 0; // Draw by insufficient material, 50-move, or threefold
+        // 
+        // OPTIMIZATION (v0.5.3): Skip threefold check in non-PV nodes - rare and expensive
+        let draw_check = if is_pv_node {
+            // In PV nodes, check all draw conditions thoroughly
+            self.board.is_insufficient_material()
+                || self.board.is_50_move_draw()
+                || self.board.is_threefold_repetition()
+        } else {
+            // In non-PV nodes, only check cheap conditions
+            // Threefold repetition is rare and expensive to check
+            self.board.is_insufficient_material()
+                || self.board.is_50_move_draw()
+        };
+        
+        if draw_check {
+            return 0; // Draw
         }
 
         // OPTIMIZATION: Cache is_in_check() result to avoid duplicate expensive calls
         let parent_in_check = self.is_in_check();
+
+        // Razoring (v0.5.3): ultra-conservative pruning at depth 1
+        // Only prune if position is clearly hopeless (static_eval << alpha)
+        if self.params.enable_razoring
+            && depth == 1
+            && !is_pv_node
+            && !parent_in_check
+            && !self.is_endgame()
+            && alpha > -MATE_THRESHOLD  // Not in mate search
+        {
+            let static_eval = self.static_eval();
+            // Position is hopeless if eval + margin < alpha
+            let threshold = alpha - self.params.razoring_margin;
+            if static_eval < threshold {
+                self.stats.inc_razoring_pruned();
+                return static_eval; // Fail low
+            }
+        }
 
         // Futility pruning: if evaluation + margin can't beat beta, prune
         if self.params.enable_futility_pruning
