@@ -1,0 +1,90 @@
+╔═══════════════════════════════════════════════════════════════════════════╗
+║              TORNEO MULTI-VERSIONE v0.5.3 - RISULTATI                     ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+Data: 2026-03-10
+Configurazione: 3s/mossa, 50ms incremento, 2 round per coppia
+
+RISULTATI SINGOLE PARTITE:
+─────────────────────────────────────────────────────────────────────────────
+
+v0.4 vs v0.5:         1-0, 0-1  (Bilanciato)
+v0.4 vs v0.5.1:       1-0, 0-1  (Bilanciato)
+v0.4 vs v0.5.2:       1-0, 0-1  (Bilanciato)
+v0.4 vs v0.5.3:       1-0, 0-1  (Bilanciato)
+v0.5 vs v0.5.1:       1-0, 0-1  (Bilanciato)
+v0.5 vs v0.5.2:       1-0, 0-1  (Bilanciato)
+v0.5 vs v0.5.3:       1-0, 0-1  (Bilanciato)
+v0.5.1 vs v0.5.2:     1-0, 0-1  (Bilanciato)
+v0.5.1 vs v0.5.3:     1-0, 0-1  (Bilanciato)
+v0.5.2 vs v0.5.3:     1-0, 0-1  (Bilanciato)
+
+CLASSIFICA FINALE:
+─────────────────────────────────────────────────────────────────────────────
+Pos  Versione    V  P  D  Punti  Partite
+─────────────────────────────────────────────────────────────────────────────
+1    v0.4        4  4  0  4.0    8
+2    v0.5        4  4  0  4.0    8
+3    v0.5.1      4  4  0  4.0    8
+4    v0.5.2      4  4  0  4.0    8
+5    v0.5.3      4  4  0  4.0    8
+
+Totale partite: 20
+
+ANALISI:
+─────────────────────────────────────────────────────────────────────────────
+
+Risultato sorprendente: TUTTE le versioni hanno esattamente lo stesso 
+punteggio! Questo indica che:
+
+1. Con 3 secondi a mossa, le differenze tra le versioni sono MOLTO sottili
+2. Ogni versione vince esattamente quando ha il bianco (vantaggio del primo)
+3. Serve più tempo per vedere differenze significative
+
+Osservazioni interessanti:
+- Nessuna partita finita in pareggio (tutte decisive)
+- Il vantaggio del bianco è determinante a questo livello di tempo
+- Le ottimizzazioni (SEE cache, razoring) non hanno mostrato vantaggio
+  significativo a 3 secondi/mossa
+
+PROSSIMO TEST SUGGERITO:
+─────────────────────────────────────────────────────────────────────────────
+- Tempo: 10 secondi/mossa per vedere differenze di profondità
+- OPPURE: Round-robin con più game per coppia (4-6 partite)
+- OPPURE: Test specifici per posizioni tattiche
+
+
+═══════════════════════════════════════════════════════════════════════════
+                    TEST AGGIUNTIVO: 10s/mossa (PARZIALE)
+═══════════════════════════════════════════════════════════════════════════
+
+Configurazione: 10s/mossa, 50ms incremento (torneo interrotto)
+
+Risultati parziali:
+───────────────────────────────────────────────────────────────────────────
+Match v0.4 vs v0.5:     1-0, 0-1     → Bilanciato (1-1)
+Match v0.4 vs v0.5.1:   1-0, 1/2-1/2 → v0.4 vince 1.5-0.5
+Match v0.4 vs v0.5.2:   1-0, 1-0     → v0.4 vince 2-0 ⚠️
+
+Osservazioni con più tempo:
+───────────────────────────────────────────────────────────────────────────
+1. Con 10s/mossa INIZIANO a emergere differenze
+2. v0.5.2 (SEE cache) sta performando PEGGIO del previsto vs v0.4
+3. v0.5.1 (TT fix) sembra più solido (solo 1 pareggio vs v0.4)
+
+Ipotesi sul risultato v0.5.2:
+- Possibile regressione non rilevata dai test automatici
+- La SEE cache potrebbe introdurre instabilità in certe posizioni
+- Serve analisi più approfondita
+
+CONCLUSIONI FINALI:
+───────────────────────────────────────────────────────────────────────────
+1. A 3s/mossa: Tutte le versioni equivalenti (vantaggio bianco domina)
+2. A 10s/mossa: Differenze emergono, ma v0.5.2 sotto-performa (inaspettato)
+3. Raccomandazione: Verificare v0.5.2 prima di considerarla stabile
+
+TODO:
+- Investigare performance v0.5.2
+- Completare torneo 10s/mossa
+- Test con posizioni specifiche (non solo startpos)
+

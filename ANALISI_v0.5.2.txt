@@ -1,0 +1,103 @@
+╔═══════════════════════════════════════════════════════════════════════════╗
+║              ANALISI v0.5.2 - Perché perde vs v0.4?                       ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+Data analisi: 2026-03-10
+
+═══════════════════════════════════════════════════════════════════════════
+                     TEST HEAD-TO-HEAD (10 partite)
+═══════════════════════════════════════════════════════════════════════════
+
+Configurazione: 5s/mossa, 10 round
+
+Risultati:
+┌──────────┬──────────┬──────────┐
+│  Game    │  v0.4    │  v0.5.2  │
+├──────────┼──────────┼──────────┤
+│ 1 (v4-W) │    0     │    1     │
+│ 2 (52-W) │    1     │    0     │
+│ 3 (v4-W) │    0.5   │    0.5   │
+│ 4 (52-W) │    1     │    0     │
+│ 5 (v4-W) │    1     │    0     │
+│ 6 (52-W) │    0     │    1     │
+│ 7 (v4-W) │    1     │    0     │
+│ 8 (52-W) │    1     │    0     │
+│ 9 (v4-W) │    0     │    1     │
+│ 10(52-W) │    0     │    1     │
+├──────────┼──────────┼──────────┤
+│ TOTALE   │   5.5    │   4.5    │
+└──────────┴──────────┴──────────┘
+
+v0.4 vince di 1 punto (margine del 10%)
+
+═══════════════════════════════════════════════════════════════════════════
+                          ANALISI TECNICA
+═══════════════════════════════════════════════════════════════════════════
+
+Cosa cambia tra v0.4 e v0.5.2?
+───────────────────────────────────────────────────────────────────────────
+
+v0.4: Baseline (senza SEE cache array)
+v0.5.2: +SEE cache array [i16; 128] + separazione per colore
+
+Possibili cause del degrado:
+
+1. CACHE OVERHEAD
+   - La SEE cache richiede inizializzazione ad ogni nodo
+   - Clear [SEE_CACHE_NONE; 128] ad ogni nodo ha un costo
+   - Se il hit rate è basso, l'overhead supera il beneficio
+
+2. DIFFERENZE DI ORDINAMENTO
+   - La cache cambia il comportamento del SEE pruning
+   - Mosse con SEE=0 vengono gestite diversamente
+   - Questo può alterare l'ordine di ricerca e la selezione delle mosse
+
+3. PRECISIONE LIMITATA
+   - Cache [i16; 128] ha range limitato (i16::MIN a i16::MAX)
+   - Valori estremi possono essere troncati
+
+4. STATISTICAMENTE NON SIGNIFICATIVO
+   - 1 punto su 10 partite = margine del 10%
+   - Con più partite il risultato potrebbe invertirsi
+   - Vantaggio del bianco gioca un ruolo importante
+
+═══════════════════════════════════════════════════════════════════════════
+                      CONFRONTO SCORE POSIZIONI
+═══════════════════════════════════════════════════════════════════════════
+
+Posizione Startpos, depth 6:
+
+Versione   │ Score │ Bestmove │ Tempo
+───────────┼───────┼──────────┼───────
+v0.4       │ cp 50 │ g1f3     │ 413ms
+v0.5.1     │ cp 5  │ g1f3     │ 211ms  ← Diverso!
+v0.5.2     │ cp 50 │ g1f3     │ 384ms
+v0.5.3     │ cp 50 │ g1f3     │ 383ms
+
+Note:
+- v0.5.1 ha score diverso (5 vs 50) - probabile differenza nei valori materiali
+- v0.5.2 e v0.5.3 allineati con v0.4
+- Tempi simili, nessun degrado prestazionale evidente
+
+═══════════════════════════════════════════════════════════════════════════
+                         CONCLUSIONI
+═══════════════════════════════════════════════════════════════════════════
+
+❌ v0.5.2 NON ha un bug grave
+⚠️  v0.5.2 performa LEGGERMENTE peggio di v0.4 nel gioco reale
+✅  La differenza è marginale (~10%) e potrebbe essere statistica
+
+Raccomandazioni:
+────────────────
+1. v0.5.2 è utilizzabile ma v0.5.3 è preferibile (include fix)
+2. La SEE cache potrebbe non dare benefici reali nel gioco pratico
+3. Per competizioni, usare v0.5.1 (TT fix) o v0.5.3 (completa)
+4. Se performance è critica, testare v0.4 vs v0.5.3 con più partite
+
+Prossimi passi:
+───────────────
+- [ ] Valutare se rimuovere SEE cache (non sembra dare vantaggi)
+- [ ] Test approfondito v0.5.3 vs v0.5.1 con 50+ partite
+- [ ] Profiling per verificare hit rate della SEE cache
+
+═══════════════════════════════════════════════════════════════════════════
