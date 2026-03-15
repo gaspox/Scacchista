@@ -3,7 +3,7 @@
 [![CI](https://github.com/gaspox/Scacchista/actions/workflows/ci.yml/badge.svg)](https://github.com/gaspox/Scacchista/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75+-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-0.4.1-green.svg)](https://github.com/gaspox/Scacchista/releases)
+[![Version](https://img.shields.io/badge/version-0.5.3-green.svg)](https://github.com/gaspox/Scacchista/releases)
 
 A UCI-compliant chess engine written in Rust, featuring alpha-beta search with parallel lazy-SMP threading and hand-crafted evaluation.
 
@@ -13,16 +13,20 @@ A UCI-compliant chess engine written in Rust, featuring alpha-beta search with p
 - **Alpha-beta** with PVS (Principal Variation Search)
 - **Aspiration windows** for iterative deepening
 - **Quiescence search** for tactical stability
-- **Pruning techniques**: null-move, LMR (Late Move Reductions), futility
-- **Move ordering**: transposition table, MVV-LVA, killer moves, history heuristic
+- **Pruning techniques**: null-move, LMR, futility, razoring (v0.5.3)
+- **Move ordering**: TT, MVV-LVA, killers, history, countermoves
 - **Lazy-SMP** parallel search (multi-threaded)
+- **SEE Cache Array** for fast exchange evaluation (v0.5.2)
+- **Draw detection**: threefold, 50-move, insufficient material
 
 ### Evaluation (HCE)
-- Material + Piece-Square Tables (PSQT)
-- King safety (castling rights, center exposure, pawn shield)
-- Development penalties for unmoved pieces
+- **Tapered Evaluation** (middlegame/endgame interpolation) v0.5.1
+- PeSTO-based Piece-Square Tables
+- King safety (pawn shield, exposure)
+- Pawn structure evaluation
+- Passed pawn bonuses (connected, defended)
+- Bishop pair bonus
 - Center control
-- Advanced passed pawn bonuses
 
 ### UCI Protocol
 - Full UCI compliance
