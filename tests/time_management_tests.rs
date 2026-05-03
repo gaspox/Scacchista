@@ -5,7 +5,7 @@ use scacchista::time::TimeManager;
 fn test_allocate_normal() {
     let tm = TimeManagement::new();
     // 60s left, no inc, white to move
-    let time = TimeManager::allocate_time(&tm, Some(60000), None, None, None, None, None, true);
+    let time = TimeManager::allocate_time(&tm, Some(60000), None, None, None, None, None, true, 0);
     // Heuristic: usually ~1/20 to 1/30 of remaining time.
     // 60000 / 30 = 2000. 60000 / 20 = 3000.
     assert!(
@@ -20,7 +20,7 @@ fn test_allocate_increment() {
     let tm = TimeManagement::new();
     // 10s left, 1s increment
     let time =
-        TimeManager::allocate_time(&tm, Some(10000), None, Some(1000), None, None, None, true);
+        TimeManager::allocate_time(&tm, Some(10000), None, Some(1000), None, None, None, true, 0);
     // Should use some of the time + increment.
     // Base: 10000/20 = 500. + Inc/2 = 500? Total ~1000.
     assert!(time > 500, "Should use feasible time with increment");
@@ -32,7 +32,7 @@ fn test_allocate_increment() {
 fn test_movetime_exact() {
     let tm = TimeManagement::new();
     // Fixed movetime 5000ms
-    let time = TimeManager::allocate_time(&tm, None, None, None, None, Some(5000), None, true);
+    let time = TimeManager::allocate_time(&tm, None, None, None, None, Some(5000), None, true, 0);
     // Should be exactly 5000 minus overhead? Or roughly 5000.
     // Implementation: `if let Some(mt) = movetime { return mt - overhead; }`
     assert!(
@@ -49,7 +49,7 @@ fn test_moves_to_go() {
 
     // 60s left, 5 moves to go.
     // Should use ~ 60s / 5 = 12s.
-    let time = TimeManager::allocate_time(&tm, Some(60000), None, None, None, None, Some(5), true);
+    let time = TimeManager::allocate_time(&tm, Some(60000), None, None, None, None, Some(5), true, 0);
 
     assert!(
         time > 8000 && time < 14000,

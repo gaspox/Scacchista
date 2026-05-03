@@ -113,7 +113,7 @@ fn test_black_up_pawn() {
         .set_from_fen("rnbqkbnr/pppp1ppp/8/4p3/8/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2")
         .unwrap();
 
-    // FIX: depth 5+ needed for accurate material evaluation (position has tactics)  
+    // FIX: depth 5+ needed for accurate material evaluation (position has tactics)
     let (_, score) =
         search::Search::new(board.clone(), 16, search::SearchParams::new().max_depth(5))
             .search(Some(5));

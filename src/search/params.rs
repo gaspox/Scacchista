@@ -74,9 +74,9 @@ impl Default for SearchParams {
             futility_min_depth: 3,
             killer_moves_count: 2,
             qsearch_depth: 4,
-            enable_qsearch_optimizations: false,  // FIX v0.5.1: disabilitato - Delta pruning troppo aggressivo
-            enable_razoring: true,   // v0.5.3: Abilitato con margine ultra-conservativo
-            razoring_margin: 50,     // 0.5 pawns (molto conservativo)
+            enable_qsearch_optimizations: false, // FIX v0.5.1: disabilitato - Delta pruning troppo aggressivo
+            enable_razoring: true,               // v0.5.3: Abilitato con margine ultra-conservativo
+            razoring_margin: 50,                 // 0.5 pawns (molto conservativo)
         }
     }
 }
@@ -186,6 +186,12 @@ pub struct TimeManagement {
     pub moves_to_go_left: u8,
     pub inc_ms: u64,
     pub msec_per_move: u64,
+}
+
+impl Default for TimeManagement {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TimeManagement {

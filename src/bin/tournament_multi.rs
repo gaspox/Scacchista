@@ -2,23 +2,17 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
-use std::time::{Instant, Duration};
+use std::time::Instant;
 
 const VERSIONS: &[&str] = &[
     "./scacchista_v0.4",
-    "./scacchista_v0.5", 
+    "./scacchista_v0.5",
     "./scacchista_v0.5.1",
     "./scacchista_v0.5.2",
     "./scacchista_v0.5.3",
 ];
 
-const VERSION_NAMES: &[&str] = &[
-    "v0.4",
-    "v0.5",
-    "v0.5.1",
-    "v0.5.2",
-    "v0.5.3",
-];
+const VERSION_NAMES: &[&str] = &["v0.4", "v0.5", "v0.5.1", "v0.5.2", "v0.5.3"];
 
 const ROUNDS_PER_PAIR: usize = 2; // Each pair plays 2 games (swap colors)
 const TIME_MS: u64 = 10000; // 10 seconds per move
@@ -41,18 +35,23 @@ struct TournamentResult {
 
 impl TournamentResult {
     fn new() -> Self {
-        Self { wins: 0, losses: 0, draws: 0 }
+        Self {
+            wins: 0,
+            losses: 0,
+            draws: 0,
+        }
     }
-    
+
     fn score(&self) -> f32 {
         self.wins as f32 + 0.5 * self.draws as f32
     }
-    
+
     fn games(&self) -> u32 {
         self.wins + self.losses + self.draws
     }
 }
 
+#[allow(clippy::needless_range_loop)]
 fn main() {
     println!("╔══════════════════════════════════════════════════════════════╗");
     println!("║           TORNEO MULTI-VERSIONE SCACCHISTA                   ║");
@@ -67,28 +66,33 @@ fn main() {
     println!("  - Round per coppia: {}", ROUNDS_PER_PAIR);
     println!("  - Tempo: {}ms + {}ms incremento", TIME_MS, INC_MS);
     println!();
-    
+
     let n = VERSIONS.len();
     let mut results: Vec<TournamentResult> = vec![TournamentResult::new(); n];
     let mut total_games = 0;
-    
+
     // Round-robin: ogni versione contro ogni altra
     for i in 0..n {
         for j in (i + 1)..n {
             println!("\n┌─────────────────────────────────────────────────────────────┐");
             println!("│ Match: {} vs {}", VERSION_NAMES[i], VERSION_NAMES[j]);
             println!("└─────────────────────────────────────────────────────────────┘");
-            
+
             for round in 0..ROUNDS_PER_PAIR {
                 let (white_idx, black_idx, white_name, black_name) = if round % 2 == 0 {
                     (i, j, VERSION_NAMES[i], VERSION_NAMES[j])
                 } else {
                     (j, i, VERSION_NAMES[j], VERSION_NAMES[i])
                 };
-                
-                print!("  Round {}/{}: {} (W) vs {} (B)... ", 
-                    round + 1, ROUNDS_PER_PAIR, white_name, black_name);
-                
+
+                print!(
+                    "  Round {}/{}: {} (W) vs {} (B)... ",
+                    round + 1,
+                    ROUNDS_PER_PAIR,
+                    white_name,
+                    black_name
+                );
+
                 match play_game(VERSIONS[white_idx], VERSIONS[black_idx]) {
                     GameResult::WhiteWin => {
                         println!("1-0");
@@ -113,47 +117,61 @@ fn main() {
             }
         }
     }
-    
+
     // Stampa risultati finali
     println!("\n");
     println!("╔══════════════════════════════════════════════════════════════╗");
     println!("║                    RISULTATI FINALI                          ║");
     println!("╚══════════════════════════════════════════════════════════════╝");
     println!();
-    println!("{:10} {:>6} {:>6} {:>6} {:>6} {:>8}", 
-        "Versione", "Vinte", "Perse", "Patte", "Punti", "Partite");
+    println!(
+        "{:10} {:>6} {:>6} {:>6} {:>6} {:>8}",
+        "Versione", "Vinte", "Perse", "Patte", "Punti", "Partite"
+    );
     println!("{:-<60}", "");
-    
+
     // Ordina per punteggio
-    let mut ranked: Vec<(usize, &str, f32)> = results.iter().enumerate()
+    let mut ranked: Vec<(usize, &str, f32)> = results
+        .iter()
+        .enumerate()
         .map(|(i, r)| (i, VERSION_NAMES[i], r.score()))
         .collect();
     ranked.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap());
-    
-    for (rank, (idx, name, score)) in ranked.iter().enumerate() {
+
+    for (idx, name, score) in ranked.iter() {
         let r = &results[*idx];
-        println!("{:10} {:>6} {:>6} {:>6} {:>6.1} {:>8}",
-            name, r.wins, r.losses, r.draws, score, r.games());
+        println!(
+            "{:10} {:>6} {:>6} {:>6} {:>6.1} {:>8}",
+            name,
+            r.wins,
+            r.losses,
+            r.draws,
+            score,
+            r.games()
+        );
     }
-    
+
     println!();
     println!("Classifica:");
-    for (rank, (idx, name, score)) in ranked.iter().enumerate() {
+    for (rank, (_idx, name, score)) in ranked.iter().enumerate() {
         println!("  {}. {} - {:.1} punti", rank + 1, name, score);
     }
-    
+
     // Calcola ELO relativi (semplificato)
     println!();
     println!("Performance relative (approssimative):");
-    let baseline_idx = ranked.iter().position(|(_, name, _)| *name == "v0.4").unwrap_or(0);
+    let baseline_idx = ranked
+        .iter()
+        .position(|(_, name, _)| *name == "v0.4")
+        .unwrap_or(0);
     let baseline_score = ranked[baseline_idx].2;
-    
+
     for (_, name, score) in &ranked {
         let diff = score - baseline_score;
         let elo = diff * 20.0; // Approssimazione: 1 punto = 20 ELO
         println!("  {}: {:+.0} ELO", name, elo);
     }
-    
+
     println!();
     println!("Totale partite giocate: {}", total_games);
 }
@@ -162,18 +180,20 @@ fn play_game(white_path: &str, black_path: &str) -> GameResult {
     let mut white_proc = match Command::new(white_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn() {
-            Ok(p) => p,
-            Err(_) => return GameResult::Error,
-        };
-    
+        .spawn()
+    {
+        Ok(p) => p,
+        Err(_) => return GameResult::Error,
+    };
+
     let mut black_proc = match Command::new(black_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn() {
-            Ok(p) => p,
-            Err(_) => return GameResult::Error,
-        };
+        .spawn()
+    {
+        Ok(p) => p,
+        Err(_) => return GameResult::Error,
+    };
 
     let mut w_in = white_proc.stdin.take().unwrap();
     let mut w_out = BufReader::new(white_proc.stdout.take().unwrap());
@@ -207,19 +227,25 @@ fn play_game(white_path: &str, black_path: &str) -> GameResult {
             format!("position startpos moves {}", moves.join(" "))
         };
 
-        let go_cmd = format!("go wtime {} btime {} winc {} binc {}", 
-            wtime, btime, INC_MS, INC_MS);
+        let go_cmd = format!(
+            "go wtime {} btime {} winc {} binc {}",
+            wtime, btime, INC_MS, INC_MS
+        );
 
         let start = Instant::now();
-        
+
         if turn == 0 {
             writeln!(w_in, "{}", position_cmd).unwrap();
             writeln!(w_in, "{}", go_cmd).unwrap();
             w_in.flush().unwrap();
-            
+
             let (mv, score) = read_bestmove(&mut w_out);
             let elapsed = start.elapsed().as_millis() as u64;
-            if wtime > elapsed { wtime -= elapsed; } else { wtime = 0; }
+            if wtime > elapsed {
+                wtime -= elapsed;
+            } else {
+                wtime = 0;
+            }
             wtime += INC_MS;
 
             if mv == "0000" || mv == "(none)" || score.abs() >= 29000 && score < 0 {
@@ -238,10 +264,14 @@ fn play_game(white_path: &str, black_path: &str) -> GameResult {
             writeln!(b_in, "{}", position_cmd).unwrap();
             writeln!(b_in, "{}", go_cmd).unwrap();
             b_in.flush().unwrap();
-            
+
             let (mv, score) = read_bestmove(&mut b_out);
             let elapsed = start.elapsed().as_millis() as u64;
-            if btime > elapsed { btime -= elapsed; } else { btime = 0; }
+            if btime > elapsed {
+                btime -= elapsed;
+            } else {
+                btime = 0;
+            }
             btime += INC_MS;
 
             if mv == "0000" || mv == "(none)" || score.abs() >= 29000 && score > 0 {
@@ -258,7 +288,7 @@ fn play_game(white_path: &str, black_path: &str) -> GameResult {
             turn = 0;
         }
     }
-    
+
     let _ = white_proc.kill();
     let _ = black_proc.kill();
     GameResult::Draw
@@ -267,7 +297,9 @@ fn play_game(white_path: &str, black_path: &str) -> GameResult {
 fn wait_for<R: BufRead>(reader: &mut R, target: &str) {
     let mut line = String::new();
     while reader.read_line(&mut line).unwrap() > 0 {
-        if line.trim() == target { return; }
+        if line.trim() == target {
+            return;
+        }
         line.clear();
     }
 }
@@ -275,12 +307,12 @@ fn wait_for<R: BufRead>(reader: &mut R, target: &str) {
 fn read_bestmove<R: BufRead>(reader: &mut R) -> (String, i32) {
     let mut line = String::new();
     let mut score = 0i32;
-    
+
     while reader.read_line(&mut line).unwrap() > 0 {
         let trimmed = line.trim();
         if trimmed.starts_with("info") && trimmed.contains("score cp") {
             if let Some(idx) = trimmed.find("cp") {
-                if let Some(val_str) = trimmed[idx+2..].split_whitespace().next() {
+                if let Some(val_str) = trimmed[idx + 2..].split_whitespace().next() {
                     if let Ok(val) = val_str.parse::<i32>() {
                         score = val;
                     }

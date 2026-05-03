@@ -47,6 +47,9 @@ pub struct UciOptions {
 
     /// Engine author
     pub author: String,
+
+    /// Move overhead in milliseconds (network/GUI lag compensation)
+    pub move_overhead_ms: u64,
 }
 
 impl Default for UciOptions {
@@ -62,6 +65,7 @@ impl Default for UciOptions {
             debug_log: false,
             engine_name: "Scacchista".to_string(),
             author: "Claude Code".to_string(),
+            move_overhead_ms: 10,
         }
     }
 }
@@ -125,8 +129,8 @@ mod tests {
         assert_eq!(options.hash, 16);
         assert_eq!(options.threads, 1);
         assert_eq!(options.engine_name, "Scacchista");
-        assert_eq!(options.use_experience_book, true);
+        assert!(options.use_experience_book);
         assert_eq!(options.chess_style, "Normal");
-        assert_eq!(options.analyze_mode, false);
+        assert!(!options.analyze_mode);
     }
 }

@@ -1,5 +1,6 @@
-// Mapping di quadrati: A1=0, B1=1, ..., H8=63
-// Usiamo questo mapping coerente per tutte le operazioni pipeline
+//! Bitboard board representation, move generation, and game rule logic.
+//!
+//! Square mapping: A1=0, B1=1, ..., H8=63. Used consistently across the engine.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Color {
@@ -248,6 +249,12 @@ pub struct Board {
     position_history: Vec<u64>,
 }
 
+impl Default for Board {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Board {
     // Board vuota da popolare via hand FEN-SETUP
     pub fn new() -> Self {
@@ -429,59 +436,48 @@ impl Board {
             position_history_len, // Store length before push
         };
         // Update Zobrist incrementally (undo still holds previous hash)
-        crate::zobrist::init_zobrist();
-        unsafe {
-            // Remove piece from old square
-            self.zobrist ^= crate::zobrist::ZOB_PIECE[piece_index(piece, color)][from];
-            // Add piece/moved piece or promoted piece
-            let moved = if move_flag(mv, FLAG_PROMOTION) {
-                move_promotion(mv).unwrap()
+        self.zobrist ^= crate::zobrist::piece_key(piece, color, from);
+        let moved = if move_flag(mv, FLAG_PROMOTION) {
+            move_promotion(mv).unwrap()
+        } else {
+            piece
+        };
+        self.zobrist ^= crate::zobrist::piece_key(moved, color, to);
+        if let Some(capt) = captured {
+            let cap_color = if color == Color::White {
+                Color::Black
             } else {
-                piece
+                Color::White
             };
-            self.zobrist ^= crate::zobrist::ZOB_PIECE[piece_index(moved, color)][to];
-            // Remove captured or e-p captured
-            if let Some(capt) = captured {
-                let cap_color = if color == Color::White {
-                    Color::Black
-                } else {
-                    Color::White
-                };
-                let cap_sq = if move_flag(mv, FLAG_EN_PASSANT) {
-                    captured_sq.unwrap()
-                } else {
-                    to
-                };
-                self.zobrist ^= crate::zobrist::ZOB_PIECE[piece_index(capt, cap_color)][cap_sq];
+            let cap_sq = if move_flag(mv, FLAG_EN_PASSANT) {
+                captured_sq.unwrap()
+            } else {
+                to
+            };
+            self.zobrist ^= crate::zobrist::piece_key(capt, cap_color, cap_sq);
+        }
+        self.zobrist ^= crate::zobrist::side_key();
+        let old_r = self.castling as usize;
+        self.update_castling_after_move(color, piece, from);
+        // IMPORTANTE: se catturiamo una torre avversaria sulla sua casella iniziale,
+        // l'avversario perde il diritto di arrocco relativo
+        if let Some(capt) = captured {
+            if capt == PieceKind::Rook {
+                self.update_castling_on_rook_capture(captured_sq.unwrap());
             }
-            // Side toggle
-            self.zobrist ^= crate::zobrist::ZOB_SIDE;
-            // Castling rights changes
-            let old_r = self.castling as usize;
-            self.update_castling_after_move(color, piece, from);
-            // IMPORTANTE: se catturiamo una torre avversaria sulla sua casella iniziale,
-            // l'avversario perde il diritto di arrocco relativo
-            if let Some(capt) = captured {
-                if capt == PieceKind::Rook {
-                    self.update_castling_on_rook_capture(captured_sq.unwrap());
-                }
-            }
-            let new_r = self.castling as usize;
-            if old_r != new_r {
-                self.zobrist ^= crate::zobrist::ZOB_CASTLING[old_r];
-                self.zobrist ^= crate::zobrist::ZOB_CASTLING[new_r];
-            }
-            // En-passant file toggle
-            {
-                if let Some(old_ep_sq) = undo.prev_ep {
-                    let old_file = (old_ep_sq % 8) as usize;
-                    self.zobrist ^= crate::zobrist::ZOB_EP_FILE[old_file];
-                }
-                if let Some(ep_sq) = new_ep_sq {
-                    let file = (ep_sq % 8) as usize;
-                    self.zobrist ^= crate::zobrist::ZOB_EP_FILE[file];
-                }
-            }
+        }
+        let new_r = self.castling as usize;
+        if old_r != new_r {
+            self.zobrist ^= crate::zobrist::castling_key(old_r);
+            self.zobrist ^= crate::zobrist::castling_key(new_r);
+        }
+        if let Some(old_ep_sq) = undo.prev_ep {
+            let old_file = (old_ep_sq % 8) as usize;
+            self.zobrist ^= crate::zobrist::ep_file_key(old_file);
+        }
+        if let Some(ep_sq) = new_ep_sq {
+            let file = (ep_sq % 8) as usize;
+            self.zobrist ^= crate::zobrist::ep_file_key(file);
         }
         // Update piece/occupancy fields
         if piece == PieceKind::King {
@@ -534,12 +530,8 @@ impl Board {
             self.remove_piece(rook_from, PieceKind::Rook, color);
             self.set_piece(rook_to, PieceKind::Rook, color);
             // Update Zobrist for rook move
-            unsafe {
-                self.zobrist ^=
-                    crate::zobrist::ZOB_PIECE[piece_index(PieceKind::Rook, color)][rook_from];
-                self.zobrist ^=
-                    crate::zobrist::ZOB_PIECE[piece_index(PieceKind::Rook, color)][rook_to];
-            }
+            self.zobrist ^= crate::zobrist::piece_key(PieceKind::Rook, color, rook_from);
+            self.zobrist ^= crate::zobrist::piece_key(PieceKind::Rook, color, rook_to);
         } else if move_flag(mv, FLAG_CASTLE_QUEEN) {
             // Queenside castle
             let (rook_from, rook_to) = if color == Color::White {
@@ -550,12 +542,8 @@ impl Board {
             self.remove_piece(rook_from, PieceKind::Rook, color);
             self.set_piece(rook_to, PieceKind::Rook, color);
             // Update Zobrist for rook move
-            unsafe {
-                self.zobrist ^=
-                    crate::zobrist::ZOB_PIECE[piece_index(PieceKind::Rook, color)][rook_from];
-                self.zobrist ^=
-                    crate::zobrist::ZOB_PIECE[piece_index(PieceKind::Rook, color)][rook_to];
-            }
+            self.zobrist ^= crate::zobrist::piece_key(PieceKind::Rook, color, rook_from);
+            self.zobrist ^= crate::zobrist::piece_key(PieceKind::Rook, color, rook_to);
         }
 
         self.refresh_occupancy();
@@ -674,12 +662,10 @@ impl Board {
                 } else if from == ROOK_QS[0] {
                     self.castling &= !0b0100u8; // rimuove Q (bit 2)
                 }
-            } else {
-                if from == ROOK_KS[1] {
-                    self.castling &= !0b0010u8; // rimuove k (bit 1)
-                } else if from == ROOK_QS[1] {
-                    self.castling &= !0b0001u8; // rimuove q (bit 0)
-                }
+            } else if from == ROOK_KS[1] {
+                self.castling &= !0b0010u8; // rimuove k (bit 1)
+            } else if from == ROOK_QS[1] {
+                self.castling &= !0b0001u8; // rimuove q (bit 0)
             }
         }
     }
@@ -758,16 +744,12 @@ impl Board {
         let black_bishops = self.piece_bb(PieceKind::Bishop, Color::Black).count_ones();
 
         // King + minor piece vs King
-        if white_pieces == 2 && black_pieces == 1 {
-            if white_knights + white_bishops == 1 {
-                return true;
-            }
+        if white_pieces == 2 && black_pieces == 1 && white_knights + white_bishops == 1 {
+            return true;
         }
 
-        if black_pieces == 2 && white_pieces == 1 {
-            if black_knights + black_bishops == 1 {
-                return true;
-            }
+        if black_pieces == 2 && white_pieces == 1 && black_knights + black_bishops == 1 {
+            return true;
         }
 
         // King + two knights vs King
@@ -840,10 +822,6 @@ impl Board {
     }
 
     /// Check if square is attacked by given color (helper for is_in_check)
-    fn is_square_attacked_by(&self, sq: usize, by: Color) -> bool {
-        self.is_square_attacked(sq, by)
-    }
-
     /// Check if current side is in check
     pub fn is_in_check(&self, side: Color) -> bool {
         let king_sq = self.king_sq(side);
@@ -885,137 +863,18 @@ impl Board {
         // Bishop/Queen (diagonal sliding)
         let diagonal_attackers =
             self.piece_bb(PieceKind::Bishop, by) | self.piece_bb(PieceKind::Queen, by);
-        if diagonal_attackers != 0 {
-            // northwest (direction -9): from sq, decrease rank, decrease file
-            // Stop when we reach file A (from_file == 0) or rank 1 (s < 0)
-            let sq_file = sq % 8;
-            if sq_file > 0 {
-                // Can move northwest
-                let mut s = sq as i8 - 9;
-                while s >= 0 {
-                    let s_file = s % 8;
-                    if (1u64 << s) & self.occ != 0 {
-                        if (1u64 << s) & diagonal_attackers != 0 {
-                            return true;
-                        }
-                        break;
-                    }
-                    if s_file == 0 {
-                        break; // Reached file A, stop
-                    }
-                    s -= 9;
-                }
-            }
-            // northeast (direction -7): from sq, decrease rank, increase file
-            // Stop when we reach file H (from_file == 7) or rank 1 (s < 0)
-            if sq_file < 7 {
-                // Can move northeast
-                let mut s = sq as i8 - 7;
-                while s >= 0 {
-                    let s_file = s % 8;
-                    if (1u64 << s) & self.occ != 0 {
-                        if (1u64 << s) & diagonal_attackers != 0 {
-                            return true;
-                        }
-                        break;
-                    }
-                    if s_file == 7 {
-                        break; // Reached file H, stop
-                    }
-                    s -= 7;
-                }
-            }
-            // southwest (direction +7): from sq, increase rank, decrease file
-            // Stop when we reach file A (s_file == 0) or rank 8 (s >= 64)
-            if sq_file > 0 {
-                // Can move southwest
-                let mut s = sq as i8 + 7;
-                while s < 64 {
-                    let s_file = s % 8;
-                    if (1u64 << s) & self.occ != 0 {
-                        if (1u64 << s) & diagonal_attackers != 0 {
-                            return true;
-                        }
-                        break;
-                    }
-                    if s_file == 0 {
-                        break; // Reached file A, stop
-                    }
-                    s += 7;
-                }
-            }
-            // southeast (direction +9): from sq, increase rank, increase file
-            // Stop when we reach file H (s_file == 7) or rank 8 (s >= 64)
-            if sq_file < 7 {
-                // Can move southeast
-                let mut s = sq as i8 + 9;
-                while s < 64 {
-                    let s_file = s % 8;
-                    if (1u64 << s) & self.occ != 0 {
-                        if (1u64 << s) & diagonal_attackers != 0 {
-                            return true;
-                        }
-                        break;
-                    }
-                    if s_file == 7 {
-                        break; // Reached file H, stop
-                    }
-                    s += 9;
-                }
-            }
+        if diagonal_attackers != 0
+            && crate::magic::bishop_attacks(sq, self.occ) & diagonal_attackers != 0
+        {
+            return true;
         }
         // Rook/Queen (orthogonal sliding)
         let orthogonal_attackers =
             self.piece_bb(PieceKind::Rook, by) | self.piece_bb(PieceKind::Queen, by);
-        if orthogonal_attackers != 0 {
-            // north
-            let mut s = (sq as i8) + 8;
-            while s < 64 {
-                if (1u64 << s) & self.occ != 0 {
-                    if (1u64 << s) & orthogonal_attackers != 0 {
-                        return true;
-                    }
-                    break;
-                }
-                s += 8;
-            }
-            // south
-            let mut s = (sq as i8) - 8;
-            while s >= 0 {
-                if (1u64 << s) & self.occ != 0 {
-                    if (1u64 << s) & orthogonal_attackers != 0 {
-                        return true;
-                    }
-                    break;
-                }
-                s -= 8;
-            }
-            // east
-            if sq % 8 != 7 {
-                let mut s = sq as i8 + 1;
-                while s % 8 != 0 {
-                    if 1u64 << s & self.occ != 0 {
-                        if 1u64 << s & orthogonal_attackers != 0 {
-                            return true;
-                        }
-                        break;
-                    }
-                    s += 1;
-                }
-            }
-            // west
-            if sq % 8 != 0 {
-                let mut s = sq as i8 - 1;
-                while s >= 0 && s % 8 != 7 {
-                    if (1u64 << s) & self.occ != 0 {
-                        if (1u64 << s) & orthogonal_attackers != 0 {
-                            return true;
-                        }
-                        break;
-                    }
-                    s -= 1;
-                }
-            }
+        if orthogonal_attackers != 0
+            && crate::magic::rook_attacks(sq, self.occ) & orthogonal_attackers != 0
+        {
+            return true;
         }
         false
     }
@@ -1532,120 +1391,18 @@ impl Board {
         let bishops = self.piece_bb(PieceKind::Bishop, side);
         let mut bb = bishops;
         while let Some(from) = crate::utils::pop_lsb(&mut bb) {
-            // Generate moves along all 4 diagonal directions
-            let directions = [9i8, -9i8, 7i8, -7i8]; // NE, SW, NW, SE
-
-            for &dir in &directions {
-                let mut to = from as i8;
-                loop {
-                    to += dir;
-
-                    // Check if we're still on board
-                    if to < 0 || to >= 64 {
-                        break;
-                    }
-
-                    // Check board edge transitions for diagonal moves
-                    let from_sq = to - dir;
-                    if from_sq < 0 || from_sq >= 64 {
-                        break;
-                    }
-                    let from_file = from_sq % 8;
-
-                    // Bishop moves shouldn't wrap around files
-                    if (dir == 9 && from_file == 7) || (dir == -9 && from_file == 0) {
-                        break; // Cannot wrap from H to A or vice versa
-                    }
-                    if (dir == 7 && from_file == 0) || (dir == -7 && from_file == 7) {
-                        break; // Cannot wrap from A to H or vice versa
-                    }
-
-                    let to_usize = to as usize;
-
-                    // Check if square is occupied
-                    if self.is_occupied(to_usize) {
-                        // If occupied by enemy, can capture
-                        let enemy_occ = if side == Color::White {
-                            self.black_occ
-                        } else {
-                            self.white_occ
-                        };
-                        if ((1u64 << to) & enemy_occ) != 0 {
-                            if let Some((piece_kind, _)) = self.piece_on(to_usize) {
-                                out.push(new_move(
-                                    from,
-                                    to_usize,
-                                    PieceKind::Bishop,
-                                    Some(piece_kind),
-                                    None,
-                                    FLAG_CAPTURE,
-                                ));
-                            }
-                        }
-                        break; // Stop sliding when we hit any piece
-                    }
-
-                    // Empty square - can move here
-                    out.push(new_move(
-                        from,
-                        to_usize,
-                        PieceKind::Bishop,
-                        None,
-                        None,
-                        FLAG_NONE,
-                    ));
-                }
-            }
+            let attacks = crate::magic::bishop_attacks(from, self.occ);
+            self.emit_sliding_moves(PieceKind::Bishop, from, attacks, side, out);
         }
     }
 
     /// Generate only bishop captures (for quiescence search)
     fn generate_bishop_captures_pseudos(&self, side: Color, out: &mut Vec<Move>) {
         let bishops = self.piece_bb(PieceKind::Bishop, side);
-        let enemy_occ = if side == Color::White {
-            self.black_occ
-        } else {
-            self.white_occ
-        };
         let mut bb = bishops;
         while let Some(from) = crate::utils::pop_lsb(&mut bb) {
-            let directions = [9i8, -9i8, 7i8, -7i8]; // NE, SW, NW, SE
-            for &dir in &directions {
-                let mut to = from as i8;
-                loop {
-                    to += dir;
-                    if to < 0 || to >= 64 {
-                        break;
-                    }
-                    let from_sq = to - dir;
-                    if from_sq < 0 || from_sq >= 64 {
-                        break;
-                    }
-                    let from_file = from_sq % 8;
-                    if (dir == 9 && from_file == 7) || (dir == -9 && from_file == 0) {
-                        break;
-                    }
-                    if (dir == 7 && from_file == 0) || (dir == -7 && from_file == 7) {
-                        break;
-                    }
-                    let to_usize = to as usize;
-                    if self.is_occupied(to_usize) {
-                        if ((1u64 << to) & enemy_occ) != 0 {
-                            if let Some((piece_kind, _)) = self.piece_on(to_usize) {
-                                out.push(new_move(
-                                    from,
-                                    to_usize,
-                                    PieceKind::Bishop,
-                                    Some(piece_kind),
-                                    None,
-                                    FLAG_CAPTURE,
-                                ));
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
+            let attacks = crate::magic::bishop_attacks(from, self.occ);
+            self.emit_sliding_captures(PieceKind::Bishop, from, attacks, side, out);
         }
     }
 
@@ -1653,120 +1410,18 @@ impl Board {
         let rooks = self.piece_bb(PieceKind::Rook, side);
         let mut bb = rooks;
         while let Some(from) = crate::utils::pop_lsb(&mut bb) {
-            // Generate moves along all 4 orthogonal directions
-            let directions = [8i8, -8i8, 1i8, -1i8]; // North, South, East, West
-
-            for &dir in &directions {
-                let mut to = from as i8;
-                loop {
-                    to += dir;
-
-                    // Check if we're still on board
-                    if to < 0 || to >= 64 {
-                        break;
-                    }
-
-                    // Check board edge transitions for horizontal moves
-                    if dir == 1 {
-                        // East
-                        let from_sq = to - dir;
-                        if from_sq >= 0 && (from_sq % 8) == 7 {
-                            break;
-                        } // Cannot wrap from H to A
-                    } else if dir == -1 {
-                        // West
-                        let from_sq = to - dir;
-                        if from_sq >= 0 && (from_sq % 8) == 0 {
-                            break;
-                        } // Cannot wrap from A to H
-                    }
-
-                    let to_usize = to as usize;
-
-                    // Check if square is occupied
-                    if self.is_occupied(to_usize) {
-                        // If occupied by enemy, can capture
-                        let enemy_occ = if side == Color::White {
-                            self.black_occ
-                        } else {
-                            self.white_occ
-                        };
-                        if ((1u64 << to) & enemy_occ) != 0 {
-                            if let Some((piece_kind, _)) = self.piece_on(to_usize) {
-                                out.push(new_move(
-                                    from,
-                                    to_usize,
-                                    PieceKind::Rook,
-                                    Some(piece_kind),
-                                    None,
-                                    FLAG_CAPTURE,
-                                ));
-                            }
-                        }
-                        break; // Stop sliding when we hit any piece
-                    }
-
-                    // Empty square - can move here
-                    out.push(new_move(
-                        from,
-                        to_usize,
-                        PieceKind::Rook,
-                        None,
-                        None,
-                        FLAG_NONE,
-                    ));
-                }
-            }
+            let attacks = crate::magic::rook_attacks(from, self.occ);
+            self.emit_sliding_moves(PieceKind::Rook, from, attacks, side, out);
         }
     }
 
     /// Generate only rook captures (for quiescence search)
     fn generate_rook_captures_pseudos(&self, side: Color, out: &mut Vec<Move>) {
         let rooks = self.piece_bb(PieceKind::Rook, side);
-        let enemy_occ = if side == Color::White {
-            self.black_occ
-        } else {
-            self.white_occ
-        };
         let mut bb = rooks;
         while let Some(from) = crate::utils::pop_lsb(&mut bb) {
-            let directions = [8i8, -8i8, 1i8, -1i8]; // North, South, East, West
-            for &dir in &directions {
-                let mut to = from as i8;
-                loop {
-                    to += dir;
-                    if to < 0 || to >= 64 {
-                        break;
-                    }
-                    if dir == 1 {
-                        let from_sq = to - dir;
-                        if from_sq >= 0 && (from_sq % 8) == 7 {
-                            break;
-                        }
-                    } else if dir == -1 {
-                        let from_sq = to - dir;
-                        if from_sq >= 0 && (from_sq % 8) == 0 {
-                            break;
-                        }
-                    }
-                    let to_usize = to as usize;
-                    if self.is_occupied(to_usize) {
-                        if ((1u64 << to) & enemy_occ) != 0 {
-                            if let Some((piece_kind, _)) = self.piece_on(to_usize) {
-                                out.push(new_move(
-                                    from,
-                                    to_usize,
-                                    PieceKind::Rook,
-                                    Some(piece_kind),
-                                    None,
-                                    FLAG_CAPTURE,
-                                ));
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
+            let attacks = crate::magic::rook_attacks(from, self.occ);
+            self.emit_sliding_captures(PieceKind::Rook, from, attacks, side, out);
         }
     }
 
@@ -1774,173 +1429,80 @@ impl Board {
         let queens = self.piece_bb(PieceKind::Queen, side);
         let mut bb = queens;
         while let Some(from) = crate::utils::pop_lsb(&mut bb) {
-            // Generate moves along all 8 directions (diagonal + orthogonal)
-            let directions = [8i8, -8i8, 1i8, -1i8, 9i8, -9i8, 7i8, -7i8]; // N,S,E,W,NE,SW,NW,SE
-
-            for &dir in &directions {
-                let mut to = from as i8;
-                loop {
-                    to += dir;
-
-                    // Check if we're still on board
-                    if to < 0 || to >= 64 {
-                        break;
-                    }
-
-                    // Check board edge transitions for horizontal/diagonal moves
-                    let from_sq = to - dir;
-                    if from_sq < 0 || from_sq >= 64 {
-                        break;
-                    }
-                    let from_file = from_sq % 8;
-
-                    // Check wrapping issues
-                    match dir {
-                        1 => {
-                            if from_file == 7 {
-                                break;
-                            }
-                        } // East: cannot wrap H->A
-                        -1 => {
-                            if from_file == 0 {
-                                break;
-                            }
-                        } // West: cannot wrap A->H
-                        9 => {
-                            if from_file == 7 {
-                                break;
-                            }
-                        } // NE: cannot wrap H->A
-                        -9 => {
-                            if from_file == 0 {
-                                break;
-                            }
-                        } // SW: cannot wrap A->H
-                        7 => {
-                            if from_file == 0 {
-                                break;
-                            }
-                        } // NW: cannot wrap A->H
-                        -7 => {
-                            if from_file == 7 {
-                                break;
-                            }
-                        } // SE: cannot wrap H->A
-                        _ => {} // N,S moves don't have file wrapping issues
-                    }
-
-                    let to_usize = to as usize;
-
-                    // Check if square is occupied
-                    if self.is_occupied(to_usize) {
-                        // If occupied by enemy, can capture
-                        let enemy_occ = if side == Color::White {
-                            self.black_occ
-                        } else {
-                            self.white_occ
-                        };
-                        if ((1u64 << to) & enemy_occ) != 0 {
-                            if let Some((piece_kind, _)) = self.piece_on(to_usize) {
-                                out.push(new_move(
-                                    from,
-                                    to_usize,
-                                    PieceKind::Queen,
-                                    Some(piece_kind),
-                                    None,
-                                    FLAG_CAPTURE,
-                                ));
-                            }
-                        }
-                        break; // Stop sliding when we hit any piece
-                    }
-
-                    // Empty square - can move here
-                    out.push(new_move(
-                        from,
-                        to_usize,
-                        PieceKind::Queen,
-                        None,
-                        None,
-                        FLAG_NONE,
-                    ));
-                }
-            }
+            let attacks = crate::magic::queen_attacks(from, self.occ);
+            self.emit_sliding_moves(PieceKind::Queen, from, attacks, side, out);
         }
     }
 
     /// Generate only queen captures (for quiescence search)
     fn generate_queen_captures_pseudos(&self, side: Color, out: &mut Vec<Move>) {
         let queens = self.piece_bb(PieceKind::Queen, side);
+        let mut bb = queens;
+        while let Some(from) = crate::utils::pop_lsb(&mut bb) {
+            let attacks = crate::magic::queen_attacks(from, self.occ);
+            self.emit_sliding_captures(PieceKind::Queen, from, attacks, side, out);
+        }
+    }
+
+    fn emit_sliding_moves(
+        &self,
+        piece: PieceKind,
+        from: usize,
+        attacks: u64,
+        side: Color,
+        out: &mut Vec<Move>,
+    ) {
         let enemy_occ = if side == Color::White {
             self.black_occ
         } else {
             self.white_occ
         };
-        let mut bb = queens;
-        while let Some(from) = crate::utils::pop_lsb(&mut bb) {
-            let directions = [8i8, -8i8, 1i8, -1i8, 9i8, -9i8, 7i8, -7i8];
-            for &dir in &directions {
-                let mut to = from as i8;
-                loop {
-                    to += dir;
-                    if to < 0 || to >= 64 {
-                        break;
-                    }
-                    let from_sq = to - dir;
-                    if from_sq < 0 || from_sq >= 64 {
-                        break;
-                    }
-                    let from_file = from_sq % 8;
-                    match dir {
-                        1 => {
-                            if from_file == 7 {
-                                break;
-                            }
-                        }
-                        -1 => {
-                            if from_file == 0 {
-                                break;
-                            }
-                        }
-                        9 => {
-                            if from_file == 7 {
-                                break;
-                            }
-                        }
-                        -9 => {
-                            if from_file == 0 {
-                                break;
-                            }
-                        }
-                        7 => {
-                            if from_file == 0 {
-                                break;
-                            }
-                        }
-                        -7 => {
-                            if from_file == 7 {
-                                break;
-                            }
-                        }
-                        _ => {}
-                    }
-                    let to_usize = to as usize;
-                    if self.is_occupied(to_usize) {
-                        if ((1u64 << to) & enemy_occ) != 0 {
-                            if let Some((piece_kind, _)) = self.piece_on(to_usize) {
-                                out.push(new_move(
-                                    from,
-                                    to_usize,
-                                    PieceKind::Queen,
-                                    Some(piece_kind),
-                                    None,
-                                    FLAG_CAPTURE,
-                                ));
-                            }
-                        }
-                        break;
-                    }
-                }
+        let quiet = attacks & !self.occ;
+        let mut q = quiet;
+        while let Some(to) = crate::utils::pop_lsb(&mut q) {
+            out.push(new_move(from, to, piece, None, None, FLAG_NONE));
+        }
+        let captures = attacks & enemy_occ;
+        let mut c = captures;
+        while let Some(to) = crate::utils::pop_lsb(&mut c) {
+            if let Some((piece_kind, _)) = self.piece_on(to) {
+                out.push(new_move(
+                    from,
+                    to,
+                    piece,
+                    Some(piece_kind),
+                    None,
+                    FLAG_CAPTURE,
+                ));
+            }
+        }
+    }
+
+    fn emit_sliding_captures(
+        &self,
+        piece: PieceKind,
+        from: usize,
+        attacks: u64,
+        side: Color,
+        out: &mut Vec<Move>,
+    ) {
+        let enemy_occ = if side == Color::White {
+            self.black_occ
+        } else {
+            self.white_occ
+        };
+        let captures = attacks & enemy_occ;
+        let mut c = captures;
+        while let Some(to) = crate::utils::pop_lsb(&mut c) {
+            if let Some((piece_kind, _)) = self.piece_on(to) {
+                out.push(new_move(
+                    from,
+                    to,
+                    piece,
+                    Some(piece_kind),
+                    None,
+                    FLAG_CAPTURE,
+                ));
             }
         }
     }
@@ -2236,7 +1798,7 @@ mod tests {
 // FEN parsing/setter su Board
 impl Board {
     pub fn set_from_fen(&mut self, fen: &str) -> Result<(), &'static str> {
-        let mut parts = fen.trim().split_whitespace();
+        let mut parts = fen.split_whitespace();
         let piece_part = parts.next().ok_or("missing pieces")?;
         let side_part = parts.next().ok_or("missing side")?;
         let castle_part = parts.next().ok_or("missing castling")?;
@@ -2363,18 +1925,12 @@ impl Board {
         };
 
         // Update Zobrist - only side toggle needed
-        crate::zobrist::init_zobrist();
-        unsafe {
-            self.zobrist ^= crate::zobrist::ZOB_SIDE;
-        }
+        self.zobrist ^= crate::zobrist::side_key();
 
         // Clear en-passant square after null move
         if let Some(ep_sq) = self.ep {
             let file = (ep_sq % 8) as usize;
-            crate::zobrist::init_zobrist();
-            unsafe {
-                self.zobrist ^= crate::zobrist::ZOB_EP_FILE[file];
-            }
+            self.zobrist ^= crate::zobrist::ep_file_key(file);
         }
         self.ep = None;
 

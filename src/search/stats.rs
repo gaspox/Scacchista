@@ -53,6 +53,15 @@ pub struct SearchStats {
     /// FIX Bug #3: Track last completed depth for UCI info display
     pub completed_depth: u8,
 
+    /// Selective depth (max ply reached including qsearch/extensions)
+    pub seldepth: u8,
+
+    /// Current root move being searched (for UCI currmove)
+    pub currmove: crate::board::Move,
+
+    /// Current root move number (for UCI currmovenumber)
+    pub currmovenumber: u32,
+
     /// Countermove heuristic cutoffs
     pub countermove_cutoffs: u64,
 
@@ -149,6 +158,12 @@ impl SearchStats {
     /// Reset all statistics
     pub fn reset(&mut self) {
         *self = Self::new();
+    }
+
+    pub fn update_seldepth(&mut self, ply: u8) {
+        if ply > self.seldepth {
+            self.seldepth = ply;
+        }
     }
 
     /// Print formatted summary

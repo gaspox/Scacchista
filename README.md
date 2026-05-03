@@ -3,7 +3,7 @@
 [![CI](https://github.com/gaspox/Scacchista/actions/workflows/ci.yml/badge.svg)](https://github.com/gaspox/Scacchista/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75+-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-0.5.3-green.svg)](https://github.com/gaspox/Scacchista/releases)
+[![Version](https://img.shields.io/badge/version-0.6.0--alpha.2-green.svg)](https://github.com/gaspox/Scacchista/releases)
 
 A UCI-compliant chess engine written in Rust, featuring alpha-beta search with parallel lazy-SMP threading and hand-crafted evaluation.
 
@@ -20,13 +20,14 @@ A UCI-compliant chess engine written in Rust, featuring alpha-beta search with p
 - **Draw detection**: threefold, 50-move, insufficient material
 
 ### Evaluation (HCE)
-- **Tapered Evaluation** (middlegame/endgame interpolation) v0.5.1
-- PeSTO-based Piece-Square Tables
-- King safety (pawn shield, exposure)
-- Pawn structure evaluation
-- Passed pawn bonuses (connected, defended)
-- Bishop pair bonus
+- **Tapered Evaluation**: MG/EG PSQT interpolation (PeSTO phase 0..24)
+- King safety (pawn shield, exposure, castling rights)
 - Center control
+- Development and tempo bonuses
+- **Pawn Structure**: doubled/isolated penalties, passed-pawn bonuses
+- **Bishop Pair**: +30 cp bonus
+- **Mobility**: piece-activity bonus (knight +4, bishop +3, rook +2, queen +1 per square)
+- **Endgame Recognition**: KQ/KR/KNB/KBB/KBP/KRP vs K, KQ vs KR/KP, KRN/KRB vs KR
 
 ### UCI Protocol
 - Full UCI compliance
@@ -160,7 +161,7 @@ Scacchista uses the [`shakmaty`](https://github.com/niklasf/shakmaty) crate (GPL
 
 See [Releases](https://github.com/gaspox/Scacchista/releases) for precompiled binaries.
 
-Latest: **v0.4.1** - Bug fixes (move generation for pawn promotions, time management for fixed movestogo/movestogo), and expanded regression test suite (tactical, draw detection, threading stress).
+Latest: **v0.6.0-alpha.1** - Foundation refactor: lock-free TT preparation, Zobrist safety cleanup, and professional codebase restructuring.
 
 ## Acknowledgments
 

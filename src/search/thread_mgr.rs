@@ -6,7 +6,7 @@
 
 use crate::board::Board;
 use crate::search::tt::TranspositionTable;
-use crate::search::{Search, SearchParams};
+use crate::search::{Search, SearchParams, SearchResult};
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc, Mutex,
@@ -22,20 +22,18 @@ pub struct SearchJob {
 }
 
 /// Thread manager implementing true lazy-SMP parallel search
+#[allow(clippy::type_complexity)]
 pub struct ThreadManager {
     workers: Vec<thread::JoinHandle<()>>,
-    num_threads: usize,
     stop_flag: Arc<AtomicBool>,
-    tt: Arc<TranspositionTable>,
     /// Current job broadcasted to all workers (None = idle)
     current_job: Arc<Mutex<Option<SearchJob>>>,
     /// Signal that a new job is available
     job_available: Arc<AtomicBool>,
     /// Stop flag for current search job
     job_stop_flag: Arc<AtomicBool>,
-    /// Results from each worker [worker_id] -> (move, score, completed_depth)
-    /// FIX Bug #3: Include completed_depth in results
-    results: Arc<Mutex<Vec<Option<(crate::board::Move, i16, u8)>>>>,
+    /// Results from each worker [worker_id]
+    results: Arc<Mutex<Vec<Option<SearchResult>>>>,
     /// Counter for workers that have completed current job
     workers_done: Arc<AtomicUsize>,
 }
@@ -47,7 +45,7 @@ impl ThreadManager {
         let current_job = Arc::new(Mutex::new(None));
         let job_available = Arc::new(AtomicBool::new(false));
         let job_stop_flag = Arc::new(AtomicBool::new(false));
-        let results = Arc::new(Mutex::new(vec![None; num_threads]));
+        let results: Arc<Mutex<Vec<Option<SearchResult>>>> = Arc::new(Mutex::new(vec![None; num_threads]));
         let workers_done = Arc::new(AtomicUsize::new(0));
 
         let mut workers = Vec::new();
@@ -84,21 +82,44 @@ impl ThreadManager {
                     if let Some(SearchJob { board, params }) = job {
                         let max_depth = params.max_depth;
 
+                        // Lazy-SMP diversity: helper threads search at slightly
+                        // different depths and with wider aspiration windows.
+                        let worker_depth = if worker_id == 0 {
+                            max_depth
+                        } else {
+                            max_depth.saturating_sub((worker_id as u8) % 3)
+                        };
+                        let mut worker_params = params.clone();
+                        worker_params.max_depth = worker_depth;
+                        if worker_id > 0 {
+                            worker_params.aspiration_window +=
+                                (worker_id as i16) * 10;
+                        }
+
                         // Create search with shared TT and job stop flag
-                        let mut search = Search::new(board, 16, params)
+                        let mut search = Search::new(board, 16, worker_params)
                             .with_shared_tt(tt_clone.clone())
                             .with_stop_flag(job_stop_clone.clone());
 
                         // Execute search
-                        let (mv, score) = search.search(Some(max_depth));
+                        let (mv, score) = search.search(Some(worker_depth));
 
-                        // FIX Bug #3: Store result including completed depth
                         {
                             let mut results_guard = results_clone
                                 .lock()
                                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-                            let completed_depth = search.stats().completed_depth;
-                            results_guard[worker_id] = Some((mv, score, completed_depth));
+                            let stats = search.stats();
+                            let hashfull = (tt_clone.fill_percentage() * 1000.0) as u8;
+                            results_guard[worker_id] = Some(SearchResult {
+                                best_move: mv,
+                                score,
+                                completed_depth: stats.completed_depth,
+                                pv: search.get_pv(),
+                                nodes: stats.nodes,
+                                nps: stats.nps,
+                                seldepth: stats.seldepth,
+                                hashfull,
+                            });
                         }
 
                         // Signal completion
@@ -118,9 +139,7 @@ impl ThreadManager {
 
         ThreadManager {
             workers,
-            num_threads,
             stop_flag,
-            tt,
             current_job,
             job_available,
             job_stop_flag,
@@ -130,9 +149,7 @@ impl ThreadManager {
     }
 
     /// Submit a job and wait for result (synchronous from caller perspective)
-    /// Broadcasts job to all workers and waits for first completion (or best result)
-    /// FIX Bug #3: Returns (move, score, completed_depth)
-    pub fn submit_job(&self, job: SearchJob) -> (crate::board::Move, i16, u8) {
+    pub fn submit_job(&self, job: SearchJob) -> SearchResult {
         // Reset state for new job
         self.workers_done.store(0, Ordering::Release);
         self.job_stop_flag.store(false, Ordering::Release);
@@ -169,24 +186,39 @@ impl ThreadManager {
                 // FIX Bug #3: Return depth 0 on timeout
                 self.job_stop_flag.store(true, Ordering::Release);
                 self.job_available.store(false, Ordering::Release);
-                return (0, 0, 0);
+                return SearchResult {
+                    best_move: 0,
+                    score: 0,
+                    completed_depth: 0,
+                    pv: Vec::new(),
+                    nodes: 0,
+                    nps: 0,
+                    seldepth: 0,
+                    hashfull: 0,
+                };
             }
             thread::sleep(Duration::from_millis(10));
         }
 
-        // Collect results from workers (take best score)
+        // Collect results: use worker 0 result (main thread authority)
         let best_result = {
-            // FIX Bug #2B: Handle mutex poisoning gracefully
             let results_guard = self.results.lock().unwrap_or_else(|poisoned| {
-                // Mutex was poisoned - recover the guard and continue
                 poisoned.into_inner()
             });
             results_guard
                 .iter()
-                .filter_map(|r| *r)
-                .max_by_key(|(_mv, score, _depth)| *score)
-                // FIX Bug #2B + #3: Return 0 (draw) and depth 0 when no results
-                .unwrap_or((0, 0, 0))
+                .filter_map(|r| r.clone())
+                .next()
+                .unwrap_or_else(|| SearchResult {
+                    best_move: 0,
+                    score: 0,
+                    completed_depth: 0,
+                    pv: Vec::new(),
+                    nodes: 0,
+                    nps: 0,
+                    seldepth: 0,
+                    hashfull: 0,
+                })
         };
 
         // Clear job (stop workers)
@@ -214,6 +246,11 @@ impl ThreadManager {
     /// Signal the currently running job (if any) to stop
     pub fn stop_current_job(&self) {
         self.job_stop_flag.store(true, Ordering::Relaxed);
+    }
+
+    /// Clone the internal job stop flag for external timer threads.
+    pub fn get_stop_flag(&self) -> Arc<AtomicBool> {
+        self.job_stop_flag.clone()
     }
 
     /// Start an async search (non-blocking). Used for "go infinite" mode.
@@ -249,9 +286,7 @@ impl ThreadManager {
     }
 
     /// Wait for async search result with timeout (blocking call).
-    /// Returns None if timeout expires or no async search is active.
-    /// FIX Bug #3: Returns (move, score, completed_depth)
-    pub fn wait_async_result(&self, timeout_ms: u64) -> Option<(crate::board::Move, i16, u8)> {
+    pub fn wait_async_result(&self, timeout_ms: u64) -> Option<SearchResult> {
         // Wait for at least one worker to complete
         let start = std::time::Instant::now();
         let timeout = Duration::from_millis(timeout_ms);
@@ -263,8 +298,7 @@ impl ThreadManager {
             thread::sleep(Duration::from_millis(10));
         }
 
-        // Collect best result
-        // FIX Bug #3: Include completed depth in result
+        // Collect best result (use first available)
         let best_result = {
             let results_guard = self
                 .results
@@ -272,8 +306,8 @@ impl ThreadManager {
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             results_guard
                 .iter()
-                .filter_map(|r| *r)
-                .max_by_key(|(_mv, score, _depth)| *score)
+                .filter_map(|r| r.clone())
+                .next()
         };
 
         // Clear job
@@ -299,9 +333,9 @@ mod tests {
             board: Board::new(),
             params: SearchParams::new().max_depth(1),
         };
-        let (mv, score, completed_depth) = tm.submit_job(job);
-        assert!(score <= 30000);
-        assert!(completed_depth >= 1);
+        let res = tm.submit_job(job);
+        assert!(res.score <= 30000);
+        assert!(res.completed_depth >= 1);
         tm.stop();
     }
 }

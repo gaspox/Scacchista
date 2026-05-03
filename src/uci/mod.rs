@@ -1,3 +1,5 @@
+//! UCI protocol implementation for Scacchista.
+
 pub mod r#loop;
 pub mod options;
 pub mod parser;

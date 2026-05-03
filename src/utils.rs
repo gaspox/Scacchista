@@ -1,4 +1,4 @@
-// Bitboard masks, iterators and helpers for move generation and search
+//! Bitboard masks, iterators and attack-table helpers for move generation and search.
 
 // File masks (A is column 0, H column 7)
 pub const FILE_A: u64 = 0x0101010101010101;
@@ -76,6 +76,7 @@ use std::sync::OnceLock;
 static KNIGHT_ATTACKS: OnceLock<[u64; 64]> = OnceLock::new();
 static KING_ATTACKS: OnceLock<[u64; 64]> = OnceLock::new();
 
+#[allow(clippy::needless_range_loop)]
 fn init_knight_attacks() -> [u64; 64] {
     const KNIGHT_OFFSETS: [(i8, i8); 8] = [
         (-2, -1),
@@ -97,7 +98,7 @@ fn init_knight_attacks() -> [u64; 64] {
         for (dx, dy) in &KNIGHT_OFFSETS {
             let new_file = file as i8 + dx;
             let new_rank = rank as i8 + dy;
-            if new_file >= 0 && new_file < 8 && new_rank >= 0 && new_rank < 8 {
+            if (0..8).contains(&new_file) && (0..8).contains(&new_rank) {
                 let target_sq = (new_rank as usize) * 8 + (new_file as usize);
                 attack_mask |= 1u64 << target_sq;
             }
@@ -107,6 +108,7 @@ fn init_knight_attacks() -> [u64; 64] {
     attacks
 }
 
+#[allow(clippy::needless_range_loop)]
 fn init_king_attacks() -> [u64; 64] {
     const KING_OFFSETS: [(i8, i8); 8] = [
         (-1, -1),
@@ -128,7 +130,7 @@ fn init_king_attacks() -> [u64; 64] {
         for (dx, dy) in &KING_OFFSETS {
             let new_file = file as i8 + dx;
             let new_rank = rank as i8 + dy;
-            if new_file >= 0 && new_file < 8 && new_rank >= 0 && new_rank < 8 {
+            if (0..8).contains(&new_file) && (0..8).contains(&new_rank) {
                 let target_sq = (new_rank as usize) * 8 + (new_file as usize);
                 attack_mask |= 1u64 << target_sq;
             }
@@ -138,11 +140,11 @@ fn init_king_attacks() -> [u64; 64] {
     attacks
 }
 
-#[inline(always)]
+#[inline]
 pub fn init_attack_tables() {
     // Initialize both tables if not already done
-    KNIGHT_ATTACKS.get_or_init(|| init_knight_attacks());
-    KING_ATTACKS.get_or_init(|| init_king_attacks());
+    KNIGHT_ATTACKS.get_or_init(init_knight_attacks);
+    KING_ATTACKS.get_or_init(init_king_attacks);
 }
 
 #[inline]

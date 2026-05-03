@@ -22,12 +22,21 @@ fn main() {
 
     println!("Running search depth 6...");
     let start = Instant::now();
-    let (best_move, score) = tm.submit_job(job);
+    let result = tm.submit_job(job);
     let elapsed = start.elapsed();
 
     println!("\n=== RESULTS ===");
-    println!("Best move: {}", scacchista::board::move_to_uci(best_move));
-    println!("Score: {} cp", score);
+    println!("Best move: {}", scacchista::board::move_to_uci(result.best_move));
+    println!("Score: {} cp", result.score);
+    println!("Depth: {}", result.completed_depth);
+    println!("Seldepth: {}", result.seldepth);
+    println!("Nodes: {}", result.nodes);
+    println!("NPS: {}", result.nps);
+    println!("Hashfull: {}", result.hashfull);
+    if !result.pv.is_empty() {
+        let pv = result.pv.iter().map(|&m| scacchista::board::move_to_uci(m)).collect::<Vec<_>>().join(" ");
+        println!("PV: {}", pv);
+    }
     println!("Time: {:?}", elapsed);
     println!();
 

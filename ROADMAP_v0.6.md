@@ -1,8 +1,8 @@
 # Roadmap v0.6.0 - Performance & Scaling
 
-**Data:** 2026-03-10  
-**Versione corrente:** v0.5.3  
-**Prossima milestone:** v0.6.0
+**Data:** 2026-04-30  
+**Versione corrente:** v0.6.0-alpha.2  
+**Prossima milestone:** v0.6.0 final / v0.6.1
 
 ---
 
@@ -15,13 +15,14 @@ la v0.6.0 si concentra su **multi-threading** e **performance pura**.
 
 ## 🎯 Obiettivi v0.6.0
 
-| Priorità | Feature | Impact | Stima |
+| Priorità | Feature | Impact | Stato |
 |----------|---------|--------|-------|
-| P0 | Lazy-SMP Diversity | +50-80% su 2 threads | 1-2 giorni |
-| P0 | Pawn Hash Table | +10-15% speed | 3-5 giorni |
-| P1 | Magic Bitboards | 3-5x move gen | 1-2 settimane |
-| P1 | Endgame Recognition | +60-80 ELO | 1-2 giorni |
-| P2 | Advanced Pruning | +30-50 ELO | 1 settimana |
+| P0 | Lazy-SMP Diversity | +50-80% su 2 threads | ✅ Completato |
+| P0 | Pawn Hash Table | +10-15% speed | ⏳ v0.6.1 |
+| P1 | Magic Bitboards | 3-5x move gen | ✅ Completato (integrato in board.rs) |
+| P1 | Endgame Recognition | +60-80 ELO | ✅ Completato (7 pattern aggiunti) |
+| P2 | Advanced Pruning | +30-50 ELO | ⏳ v0.6.1 |
+| — | Tapered Eval + Pawn Struct + Mobility | +100-150 ELO | ✅ Completato (Fase 3) |
 
 ---
 

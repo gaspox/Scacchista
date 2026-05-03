@@ -1,11 +1,12 @@
-//! Transposition Table for Scacchista
+//! Lock-free Transposition Table for Scacchista
 //!
-//! FIX v0.5.1: Tornata a Mutex TT per evitare race condition.
-//! L'interfaccia è compatibile con il codice lock-free (senza .lock().unwrap())
-//! ma internamente usa Mutex per thread-safety corretta.
+//! Each bucket holds a single entry composed of three `AtomicU64` fields:
+//! `key`, packed `data` (score/depth/age/node_type), and `best_move`.
+//! Writes are performed with `Ordering::Relaxed`; readers may observe
+//! slightly stale data, which is harmless for a lossy cache.
 
 use crate::board::Move;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 
 /// Node type for transposition table entries
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,7 +16,7 @@ pub enum NodeType {
     UpperBound = 2,
 }
 
-/// Single TT entry
+/// Single TT entry returned to callers.
 #[derive(Debug, Clone, Copy)]
 pub struct TTEntry {
     pub key: u64,
@@ -70,104 +71,166 @@ impl TTEntry {
     }
 }
 
-/// Thread-safe Transposition table using Mutex internally
-/// FIX v0.5.1: Interfaccia compatibile lock-free, ma usa Mutex per correttezza
-pub struct TranspositionTable {
-    // FIX: Usa Mutex per thread-safety corretta (evita race condition lock-free)
-    inner: Mutex<TranspositionTableInner>,
+// ---------------------------------------------------------------------------
+// Packed data layout (single u64)
+//   bits 0-15  : score (i16 cast to u16)
+//   bits 16-23 : depth
+//   bits 24-31 : age
+//   bits 32-33 : node_type (0=Exact, 1=LowerBound, 2=UpperBound)
+// ---------------------------------------------------------------------------
+
+#[inline]
+fn pack_data(score: i16, depth: u8, age: u8, node_type: NodeType) -> u64 {
+    ((score as u16) as u64)
+        | ((depth as u64) << 16)
+        | ((age as u64) << 24)
+        | ((node_type as u64) << 32)
 }
 
-struct TranspositionTableInner {
-    entries: Vec<TTEntry>,
-    mask: u64,
-    age: u8,
+#[inline]
+fn unpack_data(data: u64) -> (i16, u8, u8, NodeType) {
+    let score = (data & 0xFFFF) as u16 as i16;
+    let depth = ((data >> 16) & 0xFF) as u8;
+    let age = ((data >> 24) & 0xFF) as u8;
+    let node_type = match (data >> 32) & 0x3 {
+        0 => NodeType::Exact,
+        1 => NodeType::LowerBound,
+        2 => NodeType::UpperBound,
+        _ => NodeType::Exact,
+    };
+    (score, depth, age, node_type)
+}
+
+#[repr(C)]
+struct AtomicTTEntry {
+    key: AtomicU64,
+    data: AtomicU64,
+    best_move: AtomicU64,
+}
+
+impl AtomicTTEntry {
+    fn empty() -> Self {
+        Self {
+            key: AtomicU64::new(0),
+            data: AtomicU64::new(0),
+            best_move: AtomicU64::new(0),
+        }
+    }
+}
+
+/// Lock-free transposition table.
+pub struct TranspositionTable {
+    entries: Vec<AtomicTTEntry>,
+    mask: usize,
+    age: AtomicU8,
 }
 
 impl TranspositionTable {
-    /// Create a TT with approximately `size_mb` megabytes
+    /// Create a TT with approximately `size_mb` megabytes.
     pub fn new(size_mb: usize) -> Self {
-        let entry_size = std::mem::size_of::<TTEntry>();
-        let mut entries = (size_mb * 1024 * 1024) / entry_size;
-        if entries == 0 {
-            entries = 1024;
+        let entry_size = std::mem::size_of::<AtomicTTEntry>();
+        let mut num_entries = (size_mb * 1024 * 1024) / entry_size;
+        if num_entries == 0 {
+            num_entries = 1024;
         }
-        let actual = entries.next_power_of_two();
+        let actual = num_entries.next_power_of_two();
         let final_entries = actual.max(1024);
-        let mask = (final_entries - 1) as u64;
+        let mask = final_entries - 1;
 
-        let entries: Vec<TTEntry> = (0..final_entries)
-            .map(|_| TTEntry::empty())
-            .collect();
+        let entries: Vec<AtomicTTEntry> =
+            (0..final_entries).map(|_| AtomicTTEntry::empty()).collect();
 
         Self {
-            inner: Mutex::new(TranspositionTableInner {
-                entries,
-                mask,
-                age: 0,
-            }),
+            entries,
+            mask,
+            age: AtomicU8::new(0),
         }
     }
 
-    /// Probe returns an entry if the stored key matches and entry is recent enough
-    /// FIX v0.5.1: Usa Mutex per garantire consistenza
+    /// Probe returns an entry if the stored key matches and the entry is recent enough.
     pub fn probe(&self, key: u64) -> Option<TTEntry> {
-        let inner = self.inner.lock().unwrap();
-        let index = (key & inner.mask) as usize;
-        let e = &inner.entries[index];
-        
-        if e.key == key && inner.age.wrapping_sub(e.age) < 8 {
-            Some(*e)  // Ritorna copia, non riferimento
-        } else {
-            None
+        let index = (key as usize) & self.mask;
+        let entry = &self.entries[index];
+        let k = entry.key.load(Ordering::Relaxed);
+        if k == key {
+            let table_age = self.age.load(Ordering::Relaxed);
+            let data = entry.data.load(Ordering::Relaxed);
+            let best_move = entry.best_move.load(Ordering::Relaxed) as Move;
+            let (score, depth, entry_age, node_type) = unpack_data(data);
+            if table_age.wrapping_sub(entry_age) < 8 {
+                return Some(TTEntry {
+                    key,
+                    score,
+                    depth,
+                    node_type,
+                    best_move,
+                    age: entry_age,
+                });
+            }
         }
+        None
     }
 
-    /// Store an entry using replacement policy
-    /// FIX v0.5.1: Usa Mutex per atomicità
+    /// Store an entry using replacement policy.
     pub fn store(&self, key: u64, score: i16, depth: u8, node_type: NodeType, best_move: Move) {
-        let mut inner = self.inner.lock().unwrap();
-        let index = (key & inner.mask) as usize;
-        let current_age = inner.age;
-        let existing = &inner.entries[index];
+        let index = (key as usize) & self.mask;
+        let entry = &self.entries[index];
+        let current_age = self.age.load(Ordering::Relaxed);
 
-        // Replacement policy
-        let replace = if existing.is_empty() {
+        let existing_key = entry.key.load(Ordering::Relaxed);
+
+        let replace = if existing_key == 0 {
             true
         } else {
-            existing.is_empty()
-                || (current_age != existing.age && current_age.wrapping_sub(existing.age) >= 2)
-                || (depth >= existing.depth && node_type == NodeType::Exact)
-                || depth > existing.depth
+            let existing_data = entry.data.load(Ordering::Relaxed);
+            let (_, existing_depth, existing_age, _) = unpack_data(existing_data);
+            existing_key == 0
+                || (current_age != existing_age && current_age.wrapping_sub(existing_age) >= 2)
+                || (depth >= existing_depth && node_type == NodeType::Exact)
+                || depth > existing_depth
         };
 
         if replace {
-            inner.entries[index] = TTEntry::new(key, score, depth, node_type, best_move, current_age);
+            let packed = pack_data(score, depth, current_age, node_type);
+            entry.data.store(packed, Ordering::Relaxed);
+            entry.best_move.store(best_move as u64, Ordering::Relaxed);
+            entry.key.store(key, Ordering::Relaxed);
         }
     }
 
-    /// Increment search age
+    /// Increment search age.
     pub fn new_search(&self) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.age = inner.age.wrapping_add(1);
+        self.age.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Approximate fill percentage.
     pub fn fill_percentage(&self) -> f64 {
-        let inner = self.inner.lock().unwrap();
-        let filled = inner.entries.iter().filter(|e| !e.is_empty()).count();
-        (filled as f64 / inner.entries.len() as f64) * 100.0
+        let filled = self
+            .entries
+            .iter()
+            .filter(|e| e.key.load(Ordering::Relaxed) != 0)
+            .count();
+        (filled as f64 / self.entries.len() as f64) * 100.0
     }
 
+    /// Clear all entries.
     pub fn clear(&self) {
-        let mut inner = self.inner.lock().unwrap();
-        for e in &mut inner.entries {
-            *e = TTEntry::empty();
+        for entry in &self.entries {
+            entry.key.store(0, Ordering::Relaxed);
+            entry.data.store(0, Ordering::Relaxed);
+            entry.best_move.store(0, Ordering::Relaxed);
         }
-        inner.age = 0;
+        self.age.store(0, Ordering::Relaxed);
     }
 
+    /// Number of entries in the table.
     pub fn size(&self) -> usize {
-        let inner = self.inner.lock().unwrap();
-        inner.entries.len()
+        self.entries.len()
+    }
+
+    #[cfg(test)]
+    pub fn set_age(&self, age: u8) {
+        self.age.store(age, Ordering::Relaxed);
     }
 }
 
@@ -180,13 +243,15 @@ impl Default for TranspositionTable {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+    use std::thread;
 
     #[test]
     fn test_tt_replacement_age_wraparound() {
         let tt = TranspositionTable::new(1);
 
         // Set age to 254
-        tt.inner.lock().unwrap().age = 254;
+        tt.set_age(254);
 
         // Store an entry at age 254
         tt.store(0x1234, 100, 5, NodeType::Exact, 0x1111);
@@ -197,7 +262,7 @@ mod tests {
 
         // Increment age (wraps to 255)
         tt.new_search();
-        
+
         // Entry should still be valid
         let entry = tt.probe(0x1234);
         assert!(entry.is_some(), "Entry should still be valid");
@@ -207,36 +272,37 @@ mod tests {
     fn test_tt_collision_detection() {
         let tt = TranspositionTable::new(1);
 
-        // Due posizioni con stessi bit bassi ma diversi bit alti
+        // Two positions with same low bits but different high bits
         let key1 = 0x00001_12345;
         let key2 = 0x00002_12345;
 
         tt.store(key1, 100, 5, NodeType::Exact, 0x1111);
 
-        // key2 dovrebbe essere rilevata come collisione
+        // key2 should be detected as collision
         let entry = tt.probe(key2);
-        assert!(entry.is_none(), "Collision should be detected - different full keys");
+        assert!(
+            entry.is_none(),
+            "Collision should be detected - different full keys"
+        );
 
-        // key1 dovrebbe essere trovata
+        // key1 should be found
         let entry = tt.probe(key1).expect("key1 should exist");
         assert_eq!(entry.score, 100);
     }
 
     #[test]
     fn test_tt_thread_safety() {
-        use std::thread;
-        
         let tt = Arc::new(TranspositionTable::new(16));
         let mut handles = vec![];
 
-        // Spawn multiple threads che leggono e scrivono
+        // Spawn multiple threads reading and writing concurrently
         for i in 0..10 {
             let tt_clone = Arc::clone(&tt);
             handles.push(thread::spawn(move || {
                 for j in 0..100 {
                     let key = (i * 100 + j) as u64;
                     tt_clone.store(key, j as i16, 5, NodeType::Exact, 0);
-                    let _ = tt_clone.probe(key); // Leggi
+                    let _ = tt_clone.probe(key);
                 }
             }));
         }
@@ -245,7 +311,7 @@ mod tests {
             handle.join().unwrap();
         }
 
-        // Se arriviamo qui senza panico, il Mutex funziona correttamente
+        // If we get here without panic, the lock-free table is thread-safe
         assert!(tt.fill_percentage() > 0.0);
     }
 }

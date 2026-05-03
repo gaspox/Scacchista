@@ -73,11 +73,43 @@ All notable changes to Scacchista chess engine.
 
 ---
 
-## [Unreleased] - v0.6.0 Roadmap
+## [v0.6.0-alpha.2] - 2026-04-30
+
+### Search Professionalization (Fase 2)
+- **PV Tracking**: Triangular PV table popolata durante la ricerca
+- **UCI Info Output Professionale**: `info depth seldepth score cp|mate nodes nps time hashfull pv`
+- **Lazy-SMP Diversity**: worker helper con depth offset (`N % 3`) e aspiration window allargata (`+N*10`)
+- **Main thread authority**: risultato preso dal primo worker che completa
+- **MoveOverhead**: nuova opzione UCI (default 10ms) per compensare lag GUI/rete
+- **Emergency Time Management**: allocazione conservativa se `< 5s`, emergency se `< 1s`
+- **Ponderhit**: timer thread che ferma la ricerca dopo il tempo allocato reale
+
+### Evaluation Overhaul (Fase 3)
+- **Tapered Evaluation**: PSQT MG/EG separate con interpolazione PeSTO (`phase = 0..24`)
+- **Pawn Structure**: doubled (−20), isolated (−15) penalties
+- **Passed Pawns**: bonus progressivi per rank (20→40→80→150 cp)
+- **Bishop Pair**: +30 cp bonus
+- **Mobility**: cavallo +4, alfiere +3, torre +2, donna +1 per casella libera
+- **Endgame Recognition Estesa**: KBB, KQvKR, KQvKP, KRNvKR, KRBvKR, KRPvKR (avanzato), KBPvK
+
+### Pulizia
+- Rimosso `evaluate_lazy()` e `quick_material_count()` (codice morto)
+- Rimossi tutti `static mut` (Zobrist su `OnceLock`)
+- Zero `unsafe` residui in board.rs
+- Clippy pulito (`-D warnings` passa)
+
+### Performance
+- Perft: ~29 Mnps
+- Search startpos d8: ~361 kNPS
+- Tactical d8: ~1.55 MNPS
+
+---
+
+## [Unreleased] - v0.6.0 Final
 
 ### Planned
-- Lazy-SMP diversity layer
 - Pawn hash table
+- Syzygy tablebase integration
 - Magic bitboards
 - Endgame recognition
 - Advanced pruning (singular extensions, probcut)

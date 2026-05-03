@@ -5,6 +5,9 @@
 //! migliori (es: pedoni centrali, cavalieri sviluppati, re protetto dopo arrocco).
 
 use crate::board::{Board, Color, PieceKind};
+use crate::utils::{
+    FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H,
+};
 
 // ============================================================================
 // VALORI MATERIALI (in centipawn)
@@ -129,7 +132,7 @@ const QUEEN_PSQT: [i16; 64] = [
     0, 0, -10, -20, -10, -10, -5, -5, -10, -10, -20,
 ];
 
-/// PSQT per il re
+/// PSQT per il re (Middlegame)
 /// Incentiva:
 /// - Sicurezza dopo arrocco (+30 cp come richiesto)
 /// - Evita il centro in apertura/mediogioco
@@ -138,6 +141,80 @@ const KING_PSQT: [i16; 64] = [
     20, 20, 0, 0, 0, 0, 20, 20, -10, -20, -20, -20, -20, -20, -20, -10, -20, -30, -30, -40, -40,
     -30, -30, -20, -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30,
     -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30,
+];
+
+// ============================================================================
+// ENDGAME PSQT (EG) - dal punto di vista del BIANCO
+// ============================================================================
+// I valori EG differiscono dal MG perché la strategia cambia in finale:
+// - Re diventa aggressivo (bonus centro)
+// - Pedoni avanzati sono decisivi (bonus molto più alto)
+// - Pezzi minori ai bordi sono meno penalizzati
+
+const PAWN_PSQT_EG: [i16; 64] = [
+    0, 0, 0, 0, 0, 0, 0, 0,
+    10, 10, 10, 10, 10, 10, 10, 10,
+    15, 15, 20, 25, 25, 20, 15, 15,
+    25, 25, 35, 45, 45, 35, 25, 25,
+    60, 60, 80, 100, 100, 80, 60, 60,
+    150, 150, 180, 220, 220, 180, 150, 150,
+    300, 300, 350, 400, 400, 350, 300, 300,
+    0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+const KNIGHT_PSQT_EG: [i16; 64] = [
+    -40, -30, -20, -20, -20, -20, -30, -40,
+    -30, -10, 10, 15, 15, 10, -10, -30,
+    -20, 10, 20, 25, 25, 20, 10, -20,
+    -20, 15, 25, 30, 30, 25, 15, -20,
+    -20, 10, 25, 30, 30, 25, 10, -20,
+    -20, 10, 20, 25, 25, 20, 10, -20,
+    -30, -10, 10, 15, 15, 10, -10, -30,
+    -40, -30, -20, -20, -20, -20, -30, -40,
+];
+
+const BISHOP_PSQT_EG: [i16; 64] = [
+    -20, -10, -10, -10, -10, -10, -10, -20,
+    -10, 10, 5, 5, 5, 5, 10, -10,
+    -10, 15, 15, 15, 15, 15, 15, -10,
+    -10, 10, 15, 20, 20, 15, 10, -10,
+    -10, 10, 15, 20, 20, 15, 10, -10,
+    -10, 10, 15, 15, 15, 15, 10, -10,
+    -10, 10, 5, 5, 5, 5, 10, -10,
+    -20, -10, -10, -10, -10, -10, -10, -20,
+];
+
+const ROOK_PSQT_EG: [i16; 64] = [
+    0, 0, 0, 5, 5, 0, 0, 0,
+    -5, 0, 0, 0, 0, 0, 0, -5,
+    -5, 0, 0, 0, 0, 0, 0, -5,
+    -5, 0, 0, 0, 0, 0, 0, -5,
+    -5, 0, 0, 0, 0, 0, 0, -5,
+    -5, 0, 0, 0, 0, 0, 0, -5,
+    10, 15, 15, 15, 15, 15, 15, 10,
+    0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+const QUEEN_PSQT_EG: [i16; 64] = [
+    -10, -5, -5, 0, 0, -5, -5, -10,
+    -5, 5, 10, 5, 5, 5, 5, -5,
+    -5, 10, 10, 10, 10, 10, 5, -5,
+    0, 5, 10, 10, 10, 10, 5, 0,
+    0, 5, 10, 10, 10, 10, 5, 0,
+    -5, 5, 10, 10, 10, 10, 5, -5,
+    -5, 5, 5, 5, 5, 5, 5, -5,
+    -10, -5, -5, 0, 0, -5, -5, -10,
+];
+
+const KING_PSQT_EG: [i16; 64] = [
+    -50, -30, -20, -10, -10, -20, -30, -50,
+    -30, -10, 0, 10, 10, 0, -10, -30,
+    -20, 0, 10, 20, 20, 10, 0, -20,
+    -10, 10, 20, 30, 30, 20, 10, -10,
+    -10, 10, 20, 30, 30, 20, 10, -10,
+    -20, 0, 10, 20, 20, 10, 0, -20,
+    -30, -10, 0, 10, 10, 0, -10, -30,
+    -50, -30, -20, -10, -10, -20, -30, -50,
 ];
 
 // ============================================================================
@@ -392,7 +469,7 @@ fn king_safety(board: &Board, color: Color) -> i16 {
         //     8 pezzi avversari → -50 * (1 + 8/6) ≈ -117 cp
         let base_penalty = 50;
         let multiplier = 100 + (active_pieces * 16); // 100 = 1.0, 16 ≈ 1/6 scaled to percentage
-        safety -= (base_penalty * multiplier / 100) as i16;
+        safety -= base_penalty * multiplier / 100;
     }
 
     // 6. Bonus pedoni scudo (invariato)
@@ -461,40 +538,6 @@ fn development_penalty(board: &Board, color: Color) -> i16 {
 // FUNZIONE DI VALUTAZIONE PRINCIPALE
 // ============================================================================
 
-/// Quick material count only (no PSQT, no positional evaluation)
-///
-/// Uses bitboard popcount for O(1) per piece type instead of iterating 64 squares.
-/// This is the fastest possible evaluation, counting only piece values.
-///
-/// # Arguments
-/// * `board` - The position to evaluate
-///
-/// # Returns
-/// Material balance in centipawns from the side-to-move perspective
-fn quick_material_count(board: &Board) -> i16 {
-    let white_material: i32 =
-        board.piece_bb(PieceKind::Pawn, Color::White).count_ones() as i32 * PAWN_VALUE as i32
-        + board.piece_bb(PieceKind::Knight, Color::White).count_ones() as i32 * KNIGHT_VALUE as i32
-        + board.piece_bb(PieceKind::Bishop, Color::White).count_ones() as i32 * BISHOP_VALUE as i32
-        + board.piece_bb(PieceKind::Rook, Color::White).count_ones() as i32 * ROOK_VALUE as i32
-        + board.piece_bb(PieceKind::Queen, Color::White).count_ones() as i32 * QUEEN_VALUE as i32
-        + board.piece_bb(PieceKind::King, Color::White).count_ones() as i32 * KING_VALUE as i32;
-
-    let black_material: i32 =
-        board.piece_bb(PieceKind::Pawn, Color::Black).count_ones() as i32 * PAWN_VALUE as i32
-        + board.piece_bb(PieceKind::Knight, Color::Black).count_ones() as i32 * KNIGHT_VALUE as i32
-        + board.piece_bb(PieceKind::Bishop, Color::Black).count_ones() as i32 * BISHOP_VALUE as i32
-        + board.piece_bb(PieceKind::Rook, Color::Black).count_ones() as i32 * ROOK_VALUE as i32
-        + board.piece_bb(PieceKind::Queen, Color::Black).count_ones() as i32 * QUEEN_VALUE as i32
-        + board.piece_bb(PieceKind::King, Color::Black).count_ones() as i32 * KING_VALUE as i32;
-
-    let relative = (white_material - black_material) as i16;
-    if board.side == Color::Black {
-        -relative
-    } else {
-        relative
-    }
-}
 
 fn material_counts(board: &Board, color: Color) -> MaterialCounts {
     MaterialCounts {
@@ -514,60 +557,136 @@ fn simple_endgame_score(attacker: Color, side: Color) -> i16 {
     }
 }
 
-fn simple_endgame_bonus(board: &Board) -> Option<i16> {
-    let white_counts = material_counts(board, Color::White);
-    let black_counts = material_counts(board, Color::Black);
+fn endgame_score(board: &Board) -> Option<i16> {
+    let wc = material_counts(board, Color::White);
+    let bc = material_counts(board, Color::Black);
 
+    // Existing simple signatures (KQ/KR/KNB vs K)
     for signature in &SIMPLE_ENDGAME_SIGNATURES {
-        if white_counts == *signature && black_counts.is_empty() {
+        if wc == *signature && bc.is_empty() {
             return Some(simple_endgame_score(Color::White, board.side));
         }
-        if black_counts == *signature && white_counts.is_empty() {
+        if bc == *signature && wc.is_empty() {
             return Some(simple_endgame_score(Color::Black, board.side));
         }
+    }
+
+    let k = MaterialCounts {
+        pawns: 0,
+        knights: 0,
+        bishops: 0,
+        rooks: 0,
+        queens: 0,
+    };
+    let kq = MaterialCounts {
+        pawns: 0,
+        knights: 0,
+        bishops: 0,
+        rooks: 0,
+        queens: 1,
+    };
+    let kr = MaterialCounts {
+        pawns: 0,
+        knights: 0,
+        bishops: 0,
+        rooks: 1,
+        queens: 0,
+    };
+    let kbb = MaterialCounts {
+        pawns: 0,
+        knights: 0,
+        bishops: 2,
+        rooks: 0,
+        queens: 0,
+    };
+    let kbp = MaterialCounts {
+        pawns: 1,
+        knights: 0,
+        bishops: 1,
+        rooks: 0,
+        queens: 0,
+    };
+    let krp = MaterialCounts {
+        pawns: 1,
+        knights: 0,
+        bishops: 0,
+        rooks: 1,
+        queens: 0,
+    };
+    let krn = MaterialCounts {
+        pawns: 0,
+        knights: 1,
+        bishops: 0,
+        rooks: 1,
+        queens: 0,
+    };
+    let krb = MaterialCounts {
+        pawns: 0,
+        knights: 0,
+        bishops: 1,
+        rooks: 1,
+        queens: 0,
+    };
+    let kp = MaterialCounts {
+        pawns: 1,
+        knights: 0,
+        bishops: 0,
+        rooks: 0,
+        queens: 0,
+    };
+
+    // KBB vs K (theoretical mate)
+    if (wc == kbb && bc == k) || (bc == kbb && wc == k) {
+        let attacker = if wc == kbb { Color::White } else { Color::Black };
+        return Some(simple_endgame_score(attacker, board.side));
+    }
+
+    // KQ vs KR (easy win)
+    if (wc == kq && bc == kr) || (bc == kq && wc == kr) {
+        let attacker = if wc == kq { Color::White } else { Color::Black };
+        return Some(simple_endgame_score(attacker, board.side));
+    }
+
+    // KQ vs KP (easy win)
+    if (wc == kq && bc == kp) || (bc == kq && wc == kp) {
+        let attacker = if wc == kq { Color::White } else { Color::Black };
+        return Some(simple_endgame_score(attacker, board.side));
+    }
+
+    // KRN vs KR, KRB vs KR (usually winning)
+    if (wc == krn && bc == kr) || (bc == krn && wc == kr) {
+        let attacker = if wc == krn { Color::White } else { Color::Black };
+        return Some(simple_endgame_score(attacker, board.side));
+    }
+    if (wc == krb && bc == kr) || (bc == krb && wc == kr) {
+        let attacker = if wc == krb { Color::White } else { Color::Black };
+        return Some(simple_endgame_score(attacker, board.side));
+    }
+
+    // KRP vs KR: win if pawn is advanced (rank >= 5 for white, rank <= 4 for black)
+    if (wc == krp && bc == kr) || (bc == krp && wc == kr) {
+        let attacker = if wc == krp { Color::White } else { Color::Black };
+        let pawns = board.piece_bb(PieceKind::Pawn, attacker);
+        let advanced = if attacker == Color::White {
+            pawns & (crate::utils::RANK_5 | crate::utils::RANK_6 | crate::utils::RANK_7) != 0
+        } else {
+            pawns & (crate::utils::RANK_2 | crate::utils::RANK_3 | crate::utils::RANK_4) != 0
+        };
+        if advanced {
+            return Some(simple_endgame_score(attacker, board.side));
+        }
+    }
+
+    // KBP vs K: generally winning (simplified - ignores wrong-color-rook-pawn corners)
+    if (wc == kbp && bc == k) || (bc == kbp && wc == k) {
+        let attacker = if wc == kbp { Color::White } else { Color::Black };
+        return Some(simple_endgame_score(attacker, board.side));
     }
 
     None
 }
 
-/// Lazy evaluation: fast material check with threshold, fallback to full eval
-///
-/// This is a "quick win" optimization that skips expensive positional evaluation
-/// (king safety, development, center control) in clearly unbalanced positions.
-///
-/// Strategy:
-/// 1. Quick material-only count (no PSQT lookup)
-/// 2. If |material| > threshold (3 pawns), position is clearly won/lost → return material
-/// 3. Otherwise, position is balanced → do full evaluation
-///
-/// # Arguments
-/// * `board` - The position to evaluate
-///
-/// # Returns
-/// Score in centipawns from the side-to-move perspective
-///
-/// # Performance
-/// Expected ~10-20% speedup in tactical positions with material imbalances.
-/// No slowdown in balanced positions (single extra material count is cheap).
-pub fn evaluate_lazy(board: &Board) -> i16 {
-    if let Some(bonus) = simple_endgame_bonus(board) {
-        return bonus;
-    }
 
-    // Quick material-only evaluation
-    let material = quick_material_count(board);
-
-    // If position is clearly unbalanced (> 3 pawns advantage), skip expensive eval
-    // Rationale: In such positions, king safety and development matter less than raw material
-    const LAZY_THRESHOLD: i16 = 300; // 3 pawns (adjustable based on benchmarks)
-
-    if material.abs() > LAZY_THRESHOLD {
-        return material;
-    }
-
-    // Otherwise do full evaluation (material + PSQT + king safety + development + center)
-    evaluate(board)
-}
 
 /// Fast evaluation: only material + PSQT (no king safety, development, etc.)
 /// Used in quiescence search where speed is critical
@@ -578,7 +697,7 @@ pub fn evaluate_lazy(board: &Board) -> i16 {
 /// NOTE: Include CRITICAL king safety penalties (castling rights loss in opening)
 /// to avoid catastrophic blunders in tactical lines
 pub fn evaluate_fast(board: &Board) -> i16 {
-    if let Some(bonus) = simple_endgame_bonus(board) {
+    if let Some(bonus) = endgame_score(board) {
         return bonus;
     }
 
@@ -642,7 +761,7 @@ fn king_safety_critical_only(board: &Board, color: Color) -> i16 {
     let mut safety = 0;
 
     // Check if king has castled
-    let king_sq = board.king_sq(color);
+    let _king_sq = board.king_sq(color);
     let castled = has_castled(board, color);
 
     // Check if king has castling rights
@@ -661,6 +780,193 @@ fn king_safety_critical_only(board: &Board, color: Color) -> i16 {
     safety
 }
 
+// ============================================================================
+// PAWN STRUCTURE & BISHOP PAIR
+// ============================================================================
+
+const FILE_MASKS: [u64; 8] = [
+    FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H,
+];
+
+/// Bonus per la coppia di alfieri (+30 cp)
+fn bishop_pair(board: &Board, color: Color) -> i16 {
+    if board.piece_bb(PieceKind::Bishop, color).count_ones() >= 2 {
+        30
+    } else {
+        0
+    }
+}
+
+/// Penalità per pedoni doppi (20 cp per ogni pedone extra sullo stesso file)
+fn doubled_pawns(board: &Board, color: Color) -> i16 {
+    let pawns = board.piece_bb(PieceKind::Pawn, color);
+    let mut penalty = 0i16;
+    for &mask in &FILE_MASKS {
+        let count = (pawns & mask).count_ones() as i16;
+        if count > 1 {
+            penalty += (count - 1) * 20;
+        }
+    }
+    penalty
+}
+
+/// Penalità per pedoni isolati (15 cp ciascuno)
+fn isolated_pawns(board: &Board, color: Color) -> i16 {
+    let pawns = board.piece_bb(PieceKind::Pawn, color);
+    let mut penalty = 0i16;
+    let mut bb = pawns;
+    while bb != 0 {
+        let sq = bb.trailing_zeros() as usize;
+        bb &= bb - 1;
+        let file = sq % 8;
+        let neighbor_mask = if file == 0 {
+            FILE_MASKS[1]
+        } else if file == 7 {
+            FILE_MASKS[6]
+        } else {
+            FILE_MASKS[file - 1] | FILE_MASKS[file + 1]
+        };
+        if pawns & neighbor_mask == 0 {
+            penalty += 15;
+        }
+    }
+    penalty
+}
+
+/// Bonus per pedoni passati (progressivo per rank)
+fn passed_pawns(board: &Board, color: Color) -> i16 {
+    let my_pawns = board.piece_bb(PieceKind::Pawn, color);
+    let their_pawns = board.piece_bb(
+        PieceKind::Pawn,
+        match color {
+            Color::White => Color::Black,
+            Color::Black => Color::White,
+        },
+    );
+    let mut bonus = 0i16;
+    let mut bb = my_pawns;
+    while bb != 0 {
+        let sq = bb.trailing_zeros() as usize;
+        bb &= bb - 1;
+        let file = sq % 8;
+        let rank = sq / 8;
+
+        // Build mask of squares in front (same + adjacent files) that could block/capture
+        let mut front_mask = 0u64;
+        if color == Color::White {
+            for r in (rank + 1)..8 {
+                front_mask |= FILE_MASKS[file] << (r * 8);
+                if file > 0 {
+                    front_mask |= FILE_MASKS[file - 1] << (r * 8);
+                }
+                if file < 7 {
+                    front_mask |= FILE_MASKS[file + 1] << (r * 8);
+                }
+            }
+        } else {
+            for r in 0..rank {
+                front_mask |= FILE_MASKS[file] << (r * 8);
+                if file > 0 {
+                    front_mask |= FILE_MASKS[file - 1] << (r * 8);
+                }
+                if file < 7 {
+                    front_mask |= FILE_MASKS[file + 1] << (r * 8);
+                }
+            }
+        }
+
+        if their_pawns & front_mask == 0 {
+            let rank_bonus = if color == Color::White {
+                match rank {
+                    3 => 20,
+                    4 => 40,
+                    5 => 80,
+                    6 => 150,
+                    _ => 0,
+                }
+            } else {
+                match rank {
+                    1 => 150,
+                    2 => 80,
+                    3 => 40,
+                    4 => 20,
+                    _ => 0,
+                }
+            };
+            bonus += rank_bonus;
+        }
+    }
+    bonus
+}
+
+/// Bonus per mobilità dei pezzi (cavallo +4, alfiere +3, torre +2, donna +1 per casella)
+fn mobility(board: &Board, color: Color) -> i16 {
+    let own_occ = match color {
+        Color::White => board.white_occ,
+        Color::Black => board.black_occ,
+    };
+    let mut bonus = 0i16;
+
+    let mut knights = board.piece_bb(PieceKind::Knight, color);
+    while knights != 0 {
+        let sq = knights.trailing_zeros() as usize;
+        knights &= knights - 1;
+        let attacks = crate::utils::knight_attacks(sq) & !own_occ;
+        bonus += attacks.count_ones() as i16 * 4;
+    }
+
+    let mut bishops = board.piece_bb(PieceKind::Bishop, color);
+    while bishops != 0 {
+        let sq = bishops.trailing_zeros() as usize;
+        bishops &= bishops - 1;
+        let attacks = crate::magic::bishop_attacks(sq, board.occ) & !own_occ;
+        bonus += attacks.count_ones() as i16 * 3;
+    }
+
+    let mut rooks = board.piece_bb(PieceKind::Rook, color);
+    while rooks != 0 {
+        let sq = rooks.trailing_zeros() as usize;
+        rooks &= rooks - 1;
+        let attacks = crate::magic::rook_attacks(sq, board.occ) & !own_occ;
+        bonus += attacks.count_ones() as i16 * 2;
+    }
+
+    let mut queens = board.piece_bb(PieceKind::Queen, color);
+    while queens != 0 {
+        let sq = queens.trailing_zeros() as usize;
+        queens &= queens - 1;
+        let attacks = crate::magic::queen_attacks(sq, board.occ) & !own_occ;
+        bonus += attacks.count_ones() as i16;
+    }
+
+    bonus
+}
+
+/// Calcola la fase di gioco (24 = apertura iniziale, 0 = finale puro)
+///
+/// Basato sul numero di pezzi rimasti: ogni pezzo contribuisce al "peso" della fase.
+/// Formula PeSTO: phase = sum(piece_phase_weights), max 24.
+fn game_phase(board: &Board) -> u8 {
+    let mut phase = 0u8;
+    phase += board.piece_bb(PieceKind::Queen, Color::White).count_ones() as u8 * 4;
+    phase += board.piece_bb(PieceKind::Queen, Color::Black).count_ones() as u8 * 4;
+    phase += board.piece_bb(PieceKind::Rook, Color::White).count_ones() as u8 * 2;
+    phase += board.piece_bb(PieceKind::Rook, Color::Black).count_ones() as u8 * 2;
+    phase += board.piece_bb(PieceKind::Bishop, Color::White).count_ones() as u8;
+    phase += board.piece_bb(PieceKind::Bishop, Color::Black).count_ones() as u8;
+    phase += board.piece_bb(PieceKind::Knight, Color::White).count_ones() as u8;
+    phase += board.piece_bb(PieceKind::Knight, Color::Black).count_ones() as u8;
+    phase.min(24)
+}
+
+/// Interpola tra score middlegame e endgame in base alla fase di gioco.
+///
+/// Formula: `(mg * phase + eg * (24 - phase)) / 24`
+fn taper(mg: i32, eg: i32, phase: u8) -> i32 {
+    let p = phase as i32;
+    (mg * p + eg * (24 - p)) / 24
+}
+
 /// Valuta la posizione con materiale + PSQT + penalità sviluppo
 ///
 /// Restituisce uno score dal punto di vista del **giocatore che muove** (convenzione negamax).
@@ -672,15 +978,16 @@ fn king_safety_critical_only(board: &Board, color: Color) -> i16 {
 /// # Returns
 /// Score in centipawn dal punto di vista del side-to-move
 pub fn evaluate(board: &Board) -> i16 {
-    if let Some(bonus) = simple_endgame_bonus(board) {
+    if let Some(bonus) = endgame_score(board) {
         return bonus;
     }
 
-    let mut white_score: i32 = 0;
-    let mut black_score: i32 = 0;
+    let mut white_mg: i32 = 0;
+    let mut white_eg: i32 = 0;
+    let mut black_mg: i32 = 0;
+    let mut black_eg: i32 = 0;
 
     // Iterate directly on bitboards (much faster than piece_on() for each square)
-    // This reduces 64*12 checks to ~30-40 actual piece lookups
     let piece_kinds = [
         PieceKind::Pawn,
         PieceKind::Knight,
@@ -700,7 +1007,7 @@ pub fn evaluate(board: &Board) -> i16 {
             PieceKind::King => KING_VALUE,
         };
 
-        let psqt_table = match kind {
+        let psqt_mg = match kind {
             PieceKind::Pawn => &PAWN_PSQT,
             PieceKind::Knight => &KNIGHT_PSQT,
             PieceKind::Bishop => &BISHOP_PSQT,
@@ -708,14 +1015,22 @@ pub fn evaluate(board: &Board) -> i16 {
             PieceKind::Queen => &QUEEN_PSQT,
             PieceKind::King => &KING_PSQT,
         };
+        let psqt_eg = match kind {
+            PieceKind::Pawn => &PAWN_PSQT_EG,
+            PieceKind::Knight => &KNIGHT_PSQT_EG,
+            PieceKind::Bishop => &BISHOP_PSQT_EG,
+            PieceKind::Rook => &ROOK_PSQT_EG,
+            PieceKind::Queen => &QUEEN_PSQT_EG,
+            PieceKind::King => &KING_PSQT_EG,
+        };
 
         // White pieces
         let mut white_bb = board.piece_bb(kind, Color::White);
         while white_bb != 0 {
             let sq = white_bb.trailing_zeros() as usize;
             white_bb &= white_bb - 1; // Clear LSB
-            let psqt_bonus = psqt_table[sq];
-            white_score += material_value as i32 + psqt_bonus as i32;
+            white_mg += material_value as i32 + psqt_mg[sq] as i32;
+            white_eg += material_value as i32 + psqt_eg[sq] as i32;
         }
 
         // Black pieces (flip vertically for PSQT index)
@@ -724,34 +1039,46 @@ pub fn evaluate(board: &Board) -> i16 {
             let sq = black_bb.trailing_zeros() as usize;
             black_bb &= black_bb - 1; // Clear LSB
             let psqt_index = sq ^ 56; // Flip verticale
-            let psqt_bonus = psqt_table[psqt_index];
-            black_score += material_value as i32 + psqt_bonus as i32;
+            black_mg += material_value as i32 + psqt_mg[psqt_index] as i32;
+            black_eg += material_value as i32 + psqt_eg[psqt_index] as i32;
         }
     }
 
-    // Applica penalità per pezzi minori non sviluppati (separatamente per colore)
-    let white_penalty = development_penalty(board, Color::White);
-    let black_penalty = development_penalty(board, Color::Black);
+    // Positional components are applied to MG only for now
+    white_mg -= development_penalty(board, Color::White) as i32;
+    black_mg -= development_penalty(board, Color::Black) as i32;
 
-    white_score -= white_penalty as i32;
-    black_score -= black_penalty as i32;
+    white_mg += king_safety(board, Color::White) as i32;
+    black_mg += king_safety(board, Color::Black) as i32;
 
-    // King Safety: valuta sicurezza del Re per entrambi i colori
-    let white_king_safety = king_safety(board, Color::White);
-    let black_king_safety = king_safety(board, Color::Black);
+    // Taper material + PSQT from MG to EG based on game phase
+    let phase = game_phase(board);
+    let mut white_score = taper(white_mg, white_eg, phase);
+    let mut black_score = taper(black_mg, black_eg, phase);
 
-    white_score += white_king_safety as i32;
-    black_score += black_king_safety as i32;
+    // Bishop pair bonus
+    white_score += bishop_pair(board, Color::White) as i32;
+    black_score += bishop_pair(board, Color::Black) as i32;
+
+    // Pawn structure: doubled / isolated / passed
+    white_score -= doubled_pawns(board, Color::White) as i32;
+    black_score -= doubled_pawns(board, Color::Black) as i32;
+    white_score -= isolated_pawns(board, Color::White) as i32;
+    black_score -= isolated_pawns(board, Color::Black) as i32;
+    white_score += passed_pawns(board, Color::White) as i32;
+    black_score += passed_pawns(board, Color::Black) as i32;
+
+    // Mobility bonus
+    white_score += mobility(board, Color::White) as i32;
+    black_score += mobility(board, Color::Black) as i32;
 
     // Center Control: valuta controllo delle caselle centrali
-    // (restituisce valore già dal punto di vista Bianco - Nero)
     let center = center_control(board);
 
     // Calcola lo score relativo (Bianco - Nero)
     let relative_score = (white_score - black_score) as i16 + center;
 
     // CRITICAL: Convenzione negamax - ritorna dal punto di vista del side-to-move
-    // Se è il Nero a muovere, nego lo score (positivo = buono per il Nero)
     if board.side == Color::Black {
         -relative_score
     } else {
@@ -1067,16 +1394,17 @@ mod tests {
         );
     }
 
-
     #[test]
     fn test_evaluate_fast_bitboard_vs_naive() {
         // Create a board with various pieces
         // FEN: r3k2r/pppb1ppp/2n1pn2/3q4/3P4/2B1PN2/PP3PPP/R2QKB1R w KQkq - 1 9
         let mut board = Board::new();
-        board.set_from_fen("r3k2r/pppb1ppp/2n1pn2/3q4/3P4/2B1PN2/PP3PPP/R2QKB1R w KQkq - 1 9").unwrap();
-        
+        board
+            .set_from_fen("r3k2r/pppb1ppp/2n1pn2/3q4/3P4/2B1PN2/PP3PPP/R2QKB1R w KQkq - 1 9")
+            .unwrap();
+
         let fast_eval = evaluate_fast(&board);
-        
+
         // Naive implementation for comparison
         let mut naive_white_score: i32 = 0;
         let mut naive_black_score: i32 = 0;
@@ -1091,7 +1419,7 @@ mod tests {
                     PieceKind::Queen => QUEEN_VALUE,
                     PieceKind::King => KING_VALUE,
                 };
-                
+
                 let psqt_idx = if color == Color::White { sq } else { sq ^ 56 };
                 let psqt = match kind {
                     PieceKind::Pawn => PAWN_PSQT[psqt_idx],
@@ -1101,7 +1429,7 @@ mod tests {
                     PieceKind::Queen => QUEEN_PSQT[psqt_idx],
                     PieceKind::King => KING_PSQT[psqt_idx],
                 };
-                
+
                 let term = val as i32 + psqt as i32;
                 match color {
                     Color::White => naive_white_score += term,
@@ -1109,42 +1437,110 @@ mod tests {
                 }
             }
         }
-        
+
         // Add king safety critical (which is also called in evaluate_fast)
         naive_white_score += king_safety_critical_only(&board, Color::White) as i32;
         naive_black_score += king_safety_critical_only(&board, Color::Black) as i32;
-        
+
         let relative = (naive_white_score - naive_black_score) as i16;
-        let expected = if board.side == Color::Black { -relative } else { relative };
-        
-        assert_eq!(fast_eval, expected, "Bitboard evaluate_fast mismatch with naive iteration");
+        let expected = if board.side == Color::Black {
+            -relative
+        } else {
+            relative
+        };
+
+        assert_eq!(
+            fast_eval, expected,
+            "Bitboard evaluate_fast mismatch with naive iteration"
+        );
     }
 
     #[test]
-    fn test_quick_material_count_vs_naive() {
+    fn test_bishop_pair_bonus() {
+        let mut board_pair = Board::new();
+        board_pair
+            .set_from_fen("4k3/8/8/8/3B4/2B5/8/4K3 w - - 0 1")
+            .unwrap();
+        let mut board_single = Board::new();
+        board_single
+            .set_from_fen("4k3/8/8/8/3B4/8/8/4K3 w - - 0 1")
+            .unwrap();
+        assert!(
+            evaluate(&board_pair) > evaluate(&board_single),
+            "Bishop pair should be rewarded"
+        );
+    }
+
+    #[test]
+    fn test_doubled_pawns_penalty() {
+        let mut board_doubled = Board::new();
+        board_doubled
+            .set_from_fen("4k3/8/8/8/4P3/4P3/8/4K3 w - - 0 1")
+            .unwrap();
+        let mut board_normal = Board::new();
+        board_normal
+            .set_from_fen("4k3/8/8/8/3P4/4P3/8/4K3 w - - 0 1")
+            .unwrap();
+        assert!(
+            evaluate(&board_normal) > evaluate(&board_doubled),
+            "Doubled pawns should be penalized"
+        );
+    }
+
+    #[test]
+    fn test_isolated_pawns_penalty() {
+        let mut board_isolated = Board::new();
+        board_isolated
+            .set_from_fen("4k3/8/8/8/4P3/8/8/4K3 w - - 0 1")
+            .unwrap();
+        let mut board_supported = Board::new();
+        board_supported
+            .set_from_fen("4k3/8/8/8/3P4/4P3/8/4K3 w - - 0 1")
+            .unwrap();
+        assert!(
+            evaluate(&board_supported) > evaluate(&board_isolated),
+            "Isolated pawn should be penalized"
+        );
+    }
+
+    #[test]
+    fn test_passed_pawns_bonus() {
+        let mut board_passed = Board::new();
+        board_passed
+            .set_from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1")
+            .unwrap();
+        let mut board_blocked = Board::new();
+        board_blocked
+            .set_from_fen("4k3/8/8/8/8/4p3/4P3/4K3 w - - 0 1")
+            .unwrap();
+        assert!(
+            evaluate(&board_passed) > evaluate(&board_blocked),
+            "Passed pawn should be rewarded"
+        );
+    }
+
+    #[test]
+    fn test_mobility_bonus() {
+        let mut board_center = Board::new();
+        board_center
+            .set_from_fen("4k3/8/8/8/3N4/8/8/4K3 w - - 0 1")
+            .unwrap();
+        let mut board_corner = Board::new();
+        board_corner
+            .set_from_fen("4k3/8/8/8/8/8/8/3NK3 w - - 0 1")
+            .unwrap();
+        assert!(
+            evaluate(&board_center) > evaluate(&board_corner),
+            "Knight in center should have higher mobility bonus"
+        );
+    }
+
+    #[test]
+    fn test_endgame_kbb_vs_k() {
         let mut board = Board::new();
-        board.set_from_fen("r3k2r/pppb1ppp/2n1pn2/3q4/3P4/2B1PN2/PP3PPP/R2QKB1R w KQkq - 1 9").unwrap();
-        let fast_count = quick_material_count(&board);
-        
-        let mut white_mat: i32 = 0;
-        let mut black_mat: i32 = 0;
-        for sq in 0..64 {
-            if let Some((kind, color)) = board.piece_on(sq) {
-                let val = match kind {
-                    PieceKind::Pawn => PAWN_VALUE,
-                    PieceKind::Knight => KNIGHT_VALUE,
-                    PieceKind::Bishop => BISHOP_VALUE,
-                    PieceKind::Rook => ROOK_VALUE,
-                    PieceKind::Queen => QUEEN_VALUE,
-                    PieceKind::King => KING_VALUE,
-                };
-                if color == Color::White { white_mat += val as i32; } else { black_mat += val as i32; }
-            }
-        }
-        
-        let rel = (white_mat - black_mat) as i16;
-        let expected = if board.side == Color::Black { -rel } else { rel };
-        
-        assert_eq!(fast_count, expected, "Bitboard quick_material_count mismatch");
+        board
+            .set_from_fen("4k3/8/8/8/8/8/4B1B1/4K3 w - - 0 1")
+            .unwrap();
+        assert_eq!(evaluate(&board), SIMPLE_ENDGAME_BONUS);
     }
 }

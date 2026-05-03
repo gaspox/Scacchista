@@ -2,7 +2,9 @@
 
 use super::parser::{parse_uci_command, UciCommand};
 use crate::board::{move_to_uci, parse_uci_move, Board};
+use crate::search::search::{MATE, MATE_THRESHOLD};
 use std::io::{self, BufRead, Write};
+use std::sync::{atomic::AtomicBool, atomic::Ordering, Arc};
 use std::time::Instant;
 
 use crate::uci::options::UciOptions;
@@ -23,6 +25,21 @@ pub struct UciEngine {
     thread_mgr: Option<crate::search::ThreadManager>,
     /// Flag indicating if an async search (go infinite) is currently active
     async_search_active: bool,
+    /// Cancel flag for an active ponder timer thread
+    ponder_timer_cancel: Option<Arc<AtomicBool>>,
+    /// Last clock parameters from go command (used by ponderhit)
+    last_wtime: Option<u64>,
+    last_btime: Option<u64>,
+    last_winc: Option<u64>,
+    last_binc: Option<u64>,
+    last_movetime: Option<u64>,
+    last_movestogo: Option<u64>,
+}
+
+impl Default for UciEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl UciEngine {
@@ -36,6 +53,13 @@ impl UciEngine {
             options: opts,
             thread_mgr: Some(tm),
             async_search_active: false,
+            ponder_timer_cancel: None,
+            last_wtime: None,
+            last_btime: None,
+            last_winc: None,
+            last_binc: None,
+            last_movetime: None,
+            last_movestogo: None,
         }
     }
 
@@ -118,18 +142,32 @@ impl UciEngine {
                     &crate::search::params::TimeManagement::new(),
                     wtime,
                     btime,
-                    winc, // FIX Bug #4: Pass increment
-                    binc, // FIX Bug #4: Pass increment
+                    winc,
+                    binc,
                     movetime,
                     _movestogo.map(|x| x as u64),
                     side_white,
+                    self.options.move_overhead_ms,
                 );
 
-                if infinite {
-                    // ASYNC MODE: go infinite - start search in background, don't send bestmove yet
+                // Cancel any pending ponder timer before starting a new search
+                if let Some(cancel) = self.ponder_timer_cancel.take() {
+                    cancel.store(true, Ordering::Relaxed);
+                }
+
+                // Save clock parameters for potential ponderhit later
+                self.last_wtime = wtime;
+                self.last_btime = btime;
+                self.last_winc = winc;
+                self.last_binc = binc;
+                self.last_movetime = movetime;
+                self.last_movestogo = _movestogo.map(|x| x as u64);
+
+                if infinite || _ponder {
+                    // ASYNC MODE: go infinite / ponder - start search in background
                     let params = crate::search::SearchParams::new()
-                        .max_depth(10) // Reasonable depth for infinite mode
-                        .time_limit(600_000); // 10 minutes timeout
+                        .max_depth(99)
+                        .time_limit(0); // No time limit; wait for stop/ponderhit
 
                     if let Some(ref tm) = self.thread_mgr {
                         let job = crate::search::thread_mgr::SearchJob {
@@ -138,8 +176,12 @@ impl UciEngine {
                         };
                         tm.start_async_search(job);
                         self.async_search_active = true;
-                        self.state = UciState::Thinking;
-                        // No bestmove sent here - will be sent when stop command is received
+                        self.state = if _ponder {
+                            UciState::Pondering
+                        } else {
+                            UciState::Thinking
+                        };
+                        // No bestmove sent here - will be sent when stop/ponderhit arrives
                     } else {
                         res.push("info string no thread manager available".to_string());
                         res.push("bestmove 0000".to_string());
@@ -177,25 +219,58 @@ impl UciEngine {
                             params,
                         };
                         let search_start = Instant::now();
-                        // FIX Bug #3: submit_job now returns (mv, score, completed_depth)
-                        let (mv, score, completed_depth) = tm.submit_job(job);
+                        let result = tm.submit_job(job);
                         let search_time_ms = search_start.elapsed().as_millis() as u64;
-                        res.push(format!(
-                            "info depth {} score cp {} time {}",
-                            completed_depth, // FIX Bug #3: Use actual completed depth
-                            score,
-                            search_time_ms
-                        ));
 
-                        // Check if position is terminal (no legal moves)
-                        if mv == 0 {
+                        // Build UCI info line with full search data
+                        let mut info_parts = vec![
+                            format!("depth {}", result.completed_depth),
+                            format!("seldepth {}", result.seldepth),
+                        ];
+
+                        // Score: cp or mate
+                        if result.score >= MATE_THRESHOLD {
+                            let mate_plies = MATE - result.score;
+                            let mate_moves = (mate_plies + 1) / 2;
+                            info_parts.push(format!("score mate {}", mate_moves));
+                        } else if result.score <= -MATE_THRESHOLD {
+                            let mate_plies = MATE + result.score;
+                            let mate_moves = -(mate_plies / 2);
+                            info_parts.push(format!("score mate {}", mate_moves));
+                        } else {
+                            info_parts.push(format!("score cp {}", result.score));
+                        }
+
+                        info_parts.push(format!("nodes {}", result.nodes));
+                        if search_time_ms > 0 {
+                            info_parts.push(format!(
+                                "nps {}",
+                                result.nodes * 1000 / search_time_ms
+                            ));
+                        }
+                        info_parts.push(format!("time {}", search_time_ms));
+                        info_parts.push(format!("hashfull {}", result.hashfull));
+
+                        if !result.pv.is_empty() {
+                            let pv_str = result
+                                .pv
+                                .iter()
+                                .map(|&m| move_to_uci(m))
+                                .collect::<Vec<_>>()
+                                .join(" ");
+                            info_parts.push(format!("pv {}", pv_str));
+                        }
+
+                        res.push(format!("info {}", info_parts.join(" ")));
+
+                        if result.best_move == 0 {
                             res.push(
                                 "info string position is terminal (checkmate or stalemate)"
                                     .to_string(),
                             );
                         }
 
-                        res.push(format!("bestmove {}", move_to_uci(mv)));
+                        res.push(format!("bestmove {}", move_to_uci(result.best_move)));
                     } else {
                         res.push("info string no thread manager available".to_string());
                         res.push("bestmove 0000".to_string());
@@ -205,16 +280,49 @@ impl UciEngine {
                 }
             }
             UciCommand::Stop => {
+                // Cancel any pending ponder timer
+                if let Some(cancel) = self.ponder_timer_cancel.take() {
+                    cancel.store(true, Ordering::Relaxed);
+                }
+
                 if self.async_search_active {
                     // Stop async search (go infinite mode) and send bestmove
                     if let Some(ref tm) = self.thread_mgr {
                         tm.stop_current_job();
 
                         // Wait for result with timeout (500ms should be enough for graceful stop)
-                        // FIX Bug #3: wait_async_result now returns (mv, score, completed_depth)
-                        if let Some((mv, score, completed_depth)) = tm.wait_async_result(500) {
-                            res.push(format!("info depth {} score cp {}", completed_depth, score));
-                            res.push(format!("bestmove {}", move_to_uci(mv)));
+                        if let Some(result) = tm.wait_async_result(500) {
+                            let mut info_parts = vec![
+                                format!("depth {}", result.completed_depth),
+                                format!("seldepth {}", result.seldepth),
+                            ];
+                            if result.score >= MATE_THRESHOLD {
+                                let mate_plies = MATE - result.score;
+                                let mate_moves = (mate_plies + 1) / 2;
+                                info_parts.push(format!("score mate {}", mate_moves));
+                            } else if result.score <= -MATE_THRESHOLD {
+                                let mate_plies = MATE + result.score;
+                                let mate_moves = -(mate_plies / 2);
+                                info_parts.push(format!("score mate {}", mate_moves));
+                            } else {
+                                info_parts.push(format!("score cp {}", result.score));
+                            }
+                            info_parts.push(format!("nodes {}", result.nodes));
+                            if result.nps > 0 {
+                                info_parts.push(format!("nps {}", result.nps));
+                            }
+                            info_parts.push(format!("hashfull {}", result.hashfull));
+                            if !result.pv.is_empty() {
+                                let pv_str = result
+                                    .pv
+                                    .iter()
+                                    .map(|&m| move_to_uci(m))
+                                    .collect::<Vec<_>>()
+                                    .join(" ");
+                                info_parts.push(format!("pv {}", pv_str));
+                            }
+                            res.push(format!("info {}", info_parts.join(" ")));
+                            res.push(format!("bestmove {}", move_to_uci(result.best_move)));
                         } else {
                             // Timeout: search didn't complete in time, return null move
                             res.push("info string search timeout on stop".to_string());
@@ -270,7 +378,7 @@ impl UciEngine {
                     "Hash" => {
                         if let Some(v) = value {
                             if let Ok(mb) = v.parse::<usize>() {
-                                if mb >= 1 && mb <= 4096 {
+                                if (1..=4096).contains(&mb) {
                                     // Stop old thread manager and create new one with updated TT size
                                     if let Some(old_tm) = self.thread_mgr.take() {
                                         old_tm.stop();
@@ -291,6 +399,16 @@ impl UciEngine {
                             }
                         }
                     }
+                    "MoveOverhead" => {
+                        if let Some(v) = value {
+                            if let Ok(ms) = v.parse::<u64>() {
+                                self.options.move_overhead_ms = ms;
+                                res.push(format!("info string MoveOverhead set to {} ms", ms));
+                            } else {
+                                res.push("info string error: invalid MoveOverhead value".to_string());
+                            }
+                        }
+                    }
                     _ => {
                         // Other options: use existing set_option method
                         let _ = self.options.set_option(&name, value.clone().as_deref());
@@ -301,6 +419,38 @@ impl UciEngine {
             UciCommand::PonderHit => {
                 if self.state == UciState::Pondering {
                     self.state = UciState::Thinking;
+
+                    // Schedule a stop after the allocated thinking time.
+                    // Use the same clock parameters from the preceding go command.
+                    if let Some(ref tm) = self.thread_mgr {
+                        let side_white = self.board.side == crate::board::Color::White;
+                        let time_alloc = crate::time::TimeManager::allocate_time(
+                            &crate::search::params::TimeManagement::new(),
+                            self.last_wtime,
+                            self.last_btime,
+                            self.last_winc,
+                            self.last_binc,
+                            self.last_movetime,
+                            self.last_movestogo,
+                            side_white,
+                            self.options.move_overhead_ms,
+                        );
+
+                        // Cancel any previous timer
+                        if let Some(cancel) = self.ponder_timer_cancel.take() {
+                            cancel.store(true, Ordering::Relaxed);
+                        }
+
+                        let cancel = Arc::new(AtomicBool::new(false));
+                        self.ponder_timer_cancel = Some(cancel.clone());
+                        let flag = tm.get_stop_flag();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(time_alloc));
+                            if !cancel.load(Ordering::Relaxed) {
+                                flag.store(true, Ordering::Relaxed);
+                            }
+                        });
+                    }
                 }
             }
             UciCommand::Quit => {

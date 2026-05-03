@@ -5,7 +5,11 @@ use crate::search::params::TimeManagement as TM;
 pub struct TimeManager;
 
 impl TimeManager {
-    /// Compute milliseconds to allocate given TimeManagement and go parameters
+    /// Compute milliseconds to allocate given TimeManagement and go parameters.
+    ///
+    /// Applies emergency logic for very low time reserves and subtracts
+    /// `move_overhead_ms` to compensate for network/GUI lag.
+    #[allow(clippy::too_many_arguments)]
     pub fn allocate_time(
         time_mgmt: &TM,
         wtime: Option<u64>,
@@ -13,28 +17,40 @@ impl TimeManager {
         winc: Option<u64>,
         binc: Option<u64>,
         movetime: Option<u64>,
-        movestogo: Option<u64>, // Added movestogo
+        movestogo: Option<u64>,
         side_is_white: bool,
+        move_overhead_ms: u64,
     ) -> u64 {
         if let Some(mt) = movetime {
-            return mt;
+            return mt.saturating_sub(move_overhead_ms).max(1);
         }
 
-        let moves_to_go = movestogo.unwrap_or(40).max(2); // Default 40, min 2 to avoid huge time alloc
+        let time_left = if side_is_white { wtime } else { btime };
+        let inc = if side_is_white { winc } else { binc };
 
-        if side_is_white {
-            if let Some(w) = wtime {
-                let base_time = (w / moves_to_go).max(10);
-                let increment_bonus = winc.map(|inc| (inc * 8) / 10).unwrap_or(0);
-                return base_time + increment_bonus;
+        if let Some(t) = time_left {
+            // Emergency: less than 1 second on the clock
+            if t < 1000 {
+                return t.saturating_sub(move_overhead_ms).max(1);
             }
-        } else if let Some(b) = btime {
-            let base_time = (b / moves_to_go).max(10);
-            let increment_bonus = binc.map(|inc| (inc * 8) / 10).unwrap_or(0);
-            return base_time + increment_bonus;
+
+            // Conservative: less than 5 seconds
+            if t < 5000 {
+                let alloc = (t / 10).max(10);
+                return alloc.saturating_sub(move_overhead_ms).max(1);
+            }
+
+            // Normal allocation
+            let moves_to_go = movestogo.unwrap_or(40).max(2);
+            let base_time = (t / moves_to_go).max(10);
+            let increment_bonus = inc.map(|i| (i * 8) / 10).unwrap_or(0);
+            let alloc = base_time + increment_bonus;
+            return alloc.saturating_sub(move_overhead_ms).max(1);
         }
 
-        // fall back to configured per-move millisecond default
+        // Fallback when no clock info is provided
         time_mgmt.msec_per_move
+            .saturating_sub(move_overhead_ms)
+            .max(1)
     }
 }

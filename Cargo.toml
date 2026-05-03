@@ -1,10 +1,11 @@
 [package]
 name = "scacchista"
-version = "0.4.1"
+version = "0.6.0-alpha.1"
+rust-version = "1.75"
 edition = "2021"
 license = "GPL-3.0-or-later"
 authors = ["Gaspare <gaspox@users.noreply.github.com>"]
-description = "A UCI chess engine written in Rust with alpha-beta search, lazy-SMP threading, and HCE evaluation"
+description = "A UCI chess engine written in Rust with alpha-beta search, lazy-SMP threading, and hand-crafted evaluation"
 repository = "https://github.com/gaspox/Scacchista"
 keywords = ["chess", "engine", "uci", "game"]
 categories = ["games"]
@@ -41,6 +42,10 @@ path = "test_qsearch_simple.rs"
 [[bin]]
 name = "profile_search"
 path = "profile_search.rs"
+
+[[bin]]
+name = "bench"
+path = "src/bin/bench.rs"
 
 [profile.release]
 lto = true

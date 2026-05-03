@@ -13,13 +13,15 @@ use crate::{move_captured, move_flag, move_piece, move_to_sq};
 use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
+    Arc,
 };
 
 /// Search engine configurations
 pub const INFINITE: i16 = 30000;
 pub const MATE: i16 = 30001;
 pub const MATE_THRESHOLD: i16 = 29999;
+
+const MAX_PLY: usize = 128;
 
 /// Calculate LMR reduction using formula instead of lookup table
 /// Reduction based on depth and move count (quiet moves only)
@@ -72,6 +74,12 @@ pub struct Search {
 
     /// Counter for time check sampling (check every N nodes to avoid overhead)
     time_check_counter: u64,
+
+    /// Principal Variation table [ply][move_idx]
+    pv: [[Move; MAX_PLY]; MAX_PLY],
+
+    /// Length of PV at each ply
+    pv_length: [usize; MAX_PLY],
 }
 
 impl Search {
@@ -99,6 +107,8 @@ impl Search {
             stop_flag: None,
             time_expired: false,
             time_check_counter: 0,
+            pv: [[0; MAX_PLY]; MAX_PLY],
+            pv_length: [0; MAX_PLY],
         }
     }
 
@@ -179,6 +189,24 @@ impl Search {
         &mut self.stats
     }
 
+    /// Return the Principal Variation from the last search.
+    pub fn get_pv(&self) -> Vec<Move> {
+        self.pv[0][..self.pv_length[0]].to_vec()
+    }
+
+    fn reset_pv(&mut self) {
+        self.pv_length.fill(0);
+    }
+
+    fn update_pv(&mut self, ply: usize, mv: Move) {
+        self.pv[ply][0] = mv;
+        let child_len = self.pv_length[ply + 1];
+        self.pv_length[ply] = 1 + child_len;
+        for i in 0..child_len {
+            self.pv[ply][1 + i] = self.pv[ply + 1][i];
+        }
+    }
+
     /// Main search interface with iterative deepening
     ///
     /// # Arguments
@@ -202,7 +230,7 @@ impl Search {
 
         // Iterative deepening with aspiration windows
         for depth in 1..=max_depth {
-            let nodes_before = self.stats.nodes;
+            let _nodes_before = self.stats.nodes;
 
             // Check stop flag before starting new depth
             if let Some(ref stop) = self.stop_flag {
@@ -350,11 +378,12 @@ impl Search {
         let mut best_root_move = best_move;
         let mut best_score = -INFINITE;
         let root_moves = self.generate_root_moves();
+        self.reset_pv();
 
         // If no root moves (e.g., empty/invalid position), record a node and store a TT entry
         if root_moves.is_empty() {
             let sc = if depth <= self.params.qsearch_depth {
-                self.qsearch(-INFINITE, INFINITE, self.params.qsearch_depth)
+                self.qsearch(-INFINITE, INFINITE, self.params.qsearch_depth, 0)
             } else {
                 self.static_eval()
             };
@@ -366,16 +395,17 @@ impl Search {
             return (0, sc);
         }
 
-        let num_root_moves = root_moves.len();
-        for (i, mv) in root_moves.into_iter().enumerate() {
+        for (move_idx, mv) in root_moves.into_iter().enumerate() {
             // Increment node count for root moves
             self.stats.inc_node();
             self.stats.inc_root_node();
+            self.stats.currmove = mv;
+            self.stats.currmovenumber = (move_idx + 1) as u32;
 
             let undo = self.board.make_move(mv);
             // Always do full negamax search from root
             let score = -self.negamax_pv(depth - 1, -beta, -alpha, 0);
-            let node_type = if score >= beta {
+            let _node_type = if score >= beta {
                 NodeType::LowerBound
             } else if score <= alpha {
                 NodeType::UpperBound
@@ -398,6 +428,7 @@ impl Search {
                 // Update alpha for subsequent moves
                 if score > alpha {
                     alpha = score;
+                    self.update_pv(0, mv);
                 }
             }
 
@@ -409,7 +440,8 @@ impl Search {
 
         // Store in transposition table
         let key = self.board.recalc_zobrist();
-        self.tt.store(key, best_score, depth, NodeType::Exact, best_root_move);
+        self.tt
+            .store(key, best_score, depth, NodeType::Exact, best_root_move);
         self.stats.inc_tt_entry();
         // Store recorded in stats above.
 
@@ -427,6 +459,7 @@ impl Search {
     fn negamax_pv(&mut self, depth: u8, mut alpha: i16, beta: i16, ply: u8) -> i16 {
         // Increment node counter
         self.stats.inc_node();
+        self.stats.update_seldepth(ply);
 
         // Check time periodically (every 1024 nodes) to allow early exit
         // This prevents massive time overshoots during deep searches
@@ -446,7 +479,7 @@ impl Search {
         // FIX: Use i32 to avoid overflow when computing window size
         // (beta - alpha can overflow i16 when beta=30000, alpha=-30000)
         let is_pv_node = (beta as i32) - (alpha as i32) > 1; // PV node has open window
-        // Probe TT
+                                                             // Probe TT
         if let Some(entry) = self.tt.probe(key) {
             self.stats.inc_tt_hit();
             // In PV nodes, only use TT for move ordering, not for cutoffs
@@ -465,14 +498,14 @@ impl Search {
         // Terminal check - use depth-based quiescence switching
         if depth == 0 {
             // When at leaf, always use quiescence search
-            return self.qsearch(alpha, beta, self.params.qsearch_depth);
+            return self.qsearch(alpha, beta, self.params.qsearch_depth, ply);
         }
 
         // Draw detection - only for terminal positions
         // Note: We check for checkmate/stalemate after move generation
         // 50-move rule and threefold repetition should be handled by game controller when possible,
         // but we can still exit early here for draw states
-        // 
+        //
         // OPTIMIZATION (v0.5.3): Skip threefold check in non-PV nodes - rare and expensive
         let draw_check = if is_pv_node {
             // In PV nodes, check all draw conditions thoroughly
@@ -482,10 +515,9 @@ impl Search {
         } else {
             // In non-PV nodes, only check cheap conditions
             // Threefold repetition is rare and expensive to check
-            self.board.is_insufficient_material()
-                || self.board.is_50_move_draw()
+            self.board.is_insufficient_material() || self.board.is_50_move_draw()
         };
-        
+
         if draw_check {
             return 0; // Draw
         }
@@ -500,7 +532,8 @@ impl Search {
             && !is_pv_node
             && !parent_in_check
             && !self.is_endgame()
-            && alpha > -MATE_THRESHOLD  // Not in mate search
+            && alpha > -MATE_THRESHOLD
+        // Not in mate search
         {
             let static_eval = self.static_eval();
             // Position is hopeless if eval + margin < alpha
@@ -623,7 +656,7 @@ impl Search {
         if moves.is_empty() {
             // In checkmate or stalemate - reuse parent_in_check
             if parent_in_check {
-                return -MATE; // Checkmate, add distance-to-mate
+                return -(MATE - ply as i16); // Checkmate, add distance-to-mate
             } else {
                 return 0; // Stalemate
             }
@@ -808,6 +841,7 @@ impl Search {
                 best_move = mv;
                 if best > alpha {
                     alpha = best;
+                    self.update_pv(ply as usize, mv);
                     // Update history for quiet moves that improve alpha
                     if move_captured(mv).is_none() && !move_flag(mv, FLAG_PROMOTION) {
                         self.update_history(mv, depth);
@@ -834,8 +868,7 @@ impl Search {
             NodeType::Exact
         };
 
-        self.tt
-            .store(key, best, depth, node_type, best_move);
+        self.tt.store(key, best, depth, node_type, best_move);
 
         best
     }
@@ -864,9 +897,10 @@ impl Search {
     ///
     /// # Returns
     /// Score for the position after quiescence search
-    fn qsearch(&mut self, mut alpha: i16, beta: i16, depth: u8) -> i16 {
+    fn qsearch(&mut self, mut alpha: i16, beta: i16, depth: u8, ply: u8) -> i16 {
         // Increment quiescence node counter
         self.stats.inc_qsearch_node();
+        self.stats.update_seldepth(ply);
 
         // Check time periodically to allow early exit from deep qsearch
         if self.check_time_expired() {
@@ -913,44 +947,42 @@ impl Search {
         let moves_to_search = if in_check {
             // In check: must search all evasions
             let all_moves = self.board.generate_moves();
-            
+
             // Check for mate or stalemate (no legal moves)
             if all_moves.is_empty() {
                 if self.is_in_check() {
-                    return -MATE; // Checkmate
+                    return -(MATE - ply as i16); // Checkmate
                 } else {
                     return 0; // Stalemate
                 }
             }
             all_moves
-        } else {
-            if self.params.enable_qsearch_optimizations {
-                // Optimized path: generate only captures/promotions
-                let captures = self.board.generate_captures();
-                if captures.is_empty() {
-                    return stand_pat;
-                }
-                captures
-            } else {
-                // Slow path (Baseline): generate all moves and filter
-                let all_moves = self.board.generate_moves();
-                let mut noisy_moves = Vec::new();
-                for &mv in &all_moves {
-                     let is_noisy = move_captured(mv).is_some()            // captures
-                        || move_flag(mv, FLAG_PROMOTION)                // promotions
-                        || move_flag(mv, FLAG_CASTLE_KING)               // castling
-                        || move_flag(mv, FLAG_CASTLE_QUEEN)              // castling
-                        || self.move_gives_check(mv); // gives check
-
-                    if is_noisy {
-                        noisy_moves.push(mv);
-                    }
-                }
-                if noisy_moves.is_empty() {
-                    return stand_pat;
-                }
-                noisy_moves
+        } else if self.params.enable_qsearch_optimizations {
+            // Optimized path: generate only captures/promotions
+            let captures = self.board.generate_captures();
+            if captures.is_empty() {
+                return stand_pat;
             }
+            captures
+        } else {
+            // Slow path (Baseline): generate all moves and filter
+            let all_moves = self.board.generate_moves();
+            let mut noisy_moves = Vec::new();
+            for &mv in &all_moves {
+                let is_noisy = move_captured(mv).is_some()            // captures
+                    || move_flag(mv, FLAG_PROMOTION)                // promotions
+                    || move_flag(mv, FLAG_CASTLE_KING)               // castling
+                    || move_flag(mv, FLAG_CASTLE_QUEEN)              // castling
+                    || self.move_gives_check(mv); // gives check
+
+                if is_noisy {
+                    noisy_moves.push(mv);
+                }
+            }
+            if noisy_moves.is_empty() {
+                return stand_pat;
+            }
+            noisy_moves
         };
 
         // Order moves: use MVV-LVA for better pruning (captures first)
@@ -1011,7 +1043,7 @@ impl Search {
                     // Not a capture or promotion, shouldn't happen in qsearch
                     0
                 };
-                
+
                 // Delta margin: even if we capture the piece and get a queen promotion,
                 // we still can't beat alpha. Skip this move.
                 const DELTA_MARGIN: i16 = 200; // Safety margin for positional compensation
@@ -1024,7 +1056,7 @@ impl Search {
             let undo = self.board.make_move(mv);
 
             // Recursive quiescence search with negated bounds
-            let score = -self.qsearch(-beta, -alpha, depth - 1);
+            let score = -self.qsearch(-beta, -alpha, depth - 1, ply + 1);
 
             self.board.unmake_move(undo);
 
@@ -1043,88 +1075,6 @@ impl Search {
         }
 
         best_score
-    }
-
-    /// Material count evaluation
-    fn material_eval(&self) -> i16 {
-        // TODO: Replace with proper evaluation function
-        // For now, just count material to avoid injection bugs
-
-        // White material
-        let white_material = self
-            .board
-            .piece_bb(PieceKind::Pawn, Color::White)
-            .count_ones()
-            * 100
-            + self
-                .board
-                .piece_bb(PieceKind::Knight, Color::White)
-                .count_ones()
-                * 320
-            + self
-                .board
-                .piece_bb(PieceKind::Bishop, Color::White)
-                .count_ones()
-                * 330
-            + self
-                .board
-                .piece_bb(PieceKind::Rook, Color::White)
-                .count_ones()
-                * 500
-            + self
-                .board
-                .piece_bb(PieceKind::Queen, Color::White)
-                .count_ones()
-                * 900;
-
-        // Black material
-        let black_material = self
-            .board
-            .piece_bb(PieceKind::Pawn, Color::Black)
-            .count_ones()
-            * 100
-            + self
-                .board
-                .piece_bb(PieceKind::Knight, Color::Black)
-                .count_ones()
-                * 320
-            + self
-                .board
-                .piece_bb(PieceKind::Bishop, Color::Black)
-                .count_ones()
-                * 330
-            + self
-                .board
-                .piece_bb(PieceKind::Rook, Color::Black)
-                .count_ones()
-                * 500
-            + self
-                .board
-                .piece_bb(PieceKind::Queen, Color::Black)
-                .count_ones()
-                * 900;
-
-        // King values are so high they might overflow, handle separately
-        let white_kings = self
-            .board
-            .piece_bb(PieceKind::King, Color::White)
-            .count_ones() as i16;
-        let black_kings = self
-            .board
-            .piece_bb(PieceKind::King, Color::Black)
-            .count_ones() as i16;
-
-        let material_score =
-            (white_material as i16 - black_material as i16) + (white_kings - black_kings) * 20000;
-
-        // CRITICAL: Return from SIDE-TO-MOVE perspective (negamax convention)
-        // Positive score = good for side to move, negative = bad for side to move
-        // This is required for negamax to work correctly!
-        if self.board.side == Color::Black {
-            -material_score
-        } else {
-            material_score
-        }
     }
 
     /// Check if current side is in check
@@ -1273,27 +1223,6 @@ impl Search {
         }
     }
 
-    /// Improved MVV-LVA score: victim_value * 10 - attacker_value
-    /// Prefers capturing valuable pieces with cheap pieces
-    fn mvv_lva_score(&self, mv: Move) -> i16 {
-        let to_sq = move_to_sq(mv);
-        let from_sq = crate::move_from_sq(mv);
-
-        let victim_value = if let Some((kind, _)) = self.board.piece_on(to_sq) {
-            self.piece_value(&kind)
-        } else {
-            0
-        };
-
-        let attacker_value = if let Some((kind, _)) = self.board.piece_on(from_sq) {
-            self.piece_value(&kind)
-        } else {
-            0
-        };
-
-        victim_value * 10 - attacker_value
-    }
-
     /// Store a killer move at the given ply
     fn store_killer_move(&mut self, ply: usize, mv: Move) {
         if ply < self.killer_moves.len() {
@@ -1396,6 +1325,7 @@ impl Search {
     ///
     /// # Returns
     /// Net material gain/loss (positive = winning capture, negative = losing)
+    #[allow(clippy::needless_range_loop)]
     fn see(&mut self, target_sq: usize, attacker_color: Color) -> i16 {
         // Check cache first
         if let Some(&cached_score) = self.see_cache.get(&target_sq) {
@@ -1570,7 +1500,7 @@ impl Search {
             let mut sq = target_sq as i8 + dir;
 
             // Continue scanning until we hit board edges or a piece
-            while sq >= 0 && sq < 64 {
+            while (0..64).contains(&sq) {
                 // Check board boundaries for horizontal directions
                 if !diagonal && (dir == -1 && (sq + 1) % 8 == 0 || dir == 1 && sq % 8 == 0) {
                     break;
@@ -1704,7 +1634,7 @@ impl Search {
             let mut sq = target_sq as i8 + dir;
             let mut found_blocker = false;
 
-            while sq >= 0 && sq < 64 {
+            while (0..64).contains(&sq) {
                 // Boundary checks
                 if !diagonal && (dir == -1 && (sq + 1) % 8 == 0 || dir == 1 && sq % 8 == 0) {
                     break;
@@ -1769,18 +1699,6 @@ mod tests {
 
         assert_eq!(search.params.max_depth, 8);
         assert_eq!(search.stats.nodes, 0);
-    }
-
-    #[test]
-    fn test_material_eval() {
-        let mut board = Board::new();
-        board.set_from_fen("8/8/8/8 w - - 0 1").unwrap();
-
-        let search = Search::new(board, 1, SearchParams::new());
-
-        // In starting position with kings only: 40000 pts (2 kings)
-        let score = search.material_eval();
-        assert_eq!(score, 0); // In starting position with equal material, score should be 0
     }
 
     #[test]
@@ -1857,7 +1775,7 @@ mod tests {
         let (_best_move, _score) = search.search(Some(3));
 
         // Check that killer moves table is initialized properly
-        assert!(search.killer_moves.len() > 0);
+        assert!(!search.killer_moves.is_empty());
         assert!(search.killer_moves[0].len() >= 2); // Should have 2 slots as per params
 
         // Test that we can store a killer move directly
@@ -2030,7 +1948,6 @@ mod tests {
         println!("Null-move cutoffs in starting position: {}", null_cutoffs);
 
         // At least we should not crash
-        assert!(null_cutoffs >= 0);
     }
 
     #[test]
@@ -2054,7 +1971,6 @@ mod tests {
 
         // Should complete without crashing
         // Note: won't trigger null-move due to very few pieces (< 7) to avoid Zugzwang
-        assert!(search.stats().null_move_cutoffs >= 0);
     }
 
     #[test]
@@ -2090,7 +2006,6 @@ mod tests {
         assert_eq!(search_disabled.stats().null_move_cutoffs, 0);
 
         // Enabled version should have >= 0 null-move cutoffs (could be 0 depending on position)
-        assert!(search_enabled.stats().null_move_cutoffs >= 0);
 
         println!(
             "Null-move effect - Disabled: {}, Enabled: {}",
@@ -2120,7 +2035,6 @@ mod tests {
 
         // Set min_depth to 4 and search to depth 4, should have minimal/null null-move activity
         // because null-move applies only when depth >= min_depth
-        assert!(search.stats().null_move_cutoffs >= 0);
 
         println!(
             "Null-move with high min depth: {} nodes, {} null-move cutoffs",
@@ -2159,7 +2073,6 @@ mod tests {
         );
 
         // Should complete without issues
-        assert!(null_cutoffs >= 0);
         assert!(total_nodes > 0);
     }
 
@@ -2278,7 +2191,6 @@ mod tests {
         assert!(lmr_depth_2 <= 1);
 
         // Depth 5 search should have some LMR reductions in a complex position
-        assert!(lmr_depth_5 >= 0);
     }
 
     #[test]
@@ -2324,11 +2236,8 @@ mod tests {
         );
 
         // Both searches should have LMR activity in this position
-        assert!(lmr_first_search >= 0);
-        assert!(lmr_second_search >= 0);
 
         // Some variation is expected due to different parameters
-        assert!(lmr_second_search >= 0);
     }
 
     #[test]
@@ -2358,7 +2267,6 @@ mod tests {
 
         // Should have some LMR activity for quiet moves
         // But captures should not be reduced (this is enforced by is_quiet check)
-        assert!(lmr_reductions >= 0);
 
         // The best move could be a capture or quiet move depending on position
         // LMR only applies to quiet moves, so we test that system works
@@ -2395,8 +2303,6 @@ mod tests {
         );
 
         // Both optimizations should work together
-        assert!(lmr_count >= 0);
-        assert!(null_move_count >= 0);
 
         // In this complex position, we should see activity from both
         // But we don't enforce specific counts as they depend on the position
@@ -2445,10 +2351,9 @@ mod tests {
         let (_best_move, _score) = search.search(Some(5));
 
         // Should work with custom parameters
-        assert!(search.stats().lmr_reductions >= 0);
         assert!(search.params.lmr_min_depth == 4);
         assert!(search.params.lmr_base_reduction == 2);
-        assert!(search.params.enable_lmr == true);
+        assert!(search.params.enable_lmr);
 
         println!(
             "LMR parameters test: {} reductions with custom params",
@@ -2483,8 +2388,7 @@ mod tests {
         );
 
         // Should have some futility pruning activity in a complex position
-        assert!(futility_pruned >= 0);
-        assert!(search.params.enable_futility_pruning == true);
+        assert!(search.params.enable_futility_pruning);
         assert!(search.params.futility_margin == 100);
         assert!(search.params.futility_min_depth == 3);
     }
@@ -2532,7 +2436,6 @@ mod tests {
         assert_eq!(futility_disabled, 0);
 
         // Enabled version should have >= 0 futility pruning (could be 0 depending on position)
-        assert!(futility_enabled >= 0);
     }
 
     #[test]
@@ -2576,8 +2479,6 @@ mod tests {
         );
 
         // Both should complete without crashing
-        assert!(pruned_large >= 0);
-        assert!(pruned_small >= 0);
 
         // The exact relationship depends on position, but both should work
         assert!(search_large_margin.params.futility_margin == 500);
@@ -2611,7 +2512,6 @@ mod tests {
         );
 
         // Search should complete without crashing
-        assert!(futility_pruned >= 0);
 
         // Verify that is_endgame() works correctly
         assert!(search.is_endgame());
@@ -2672,10 +2572,7 @@ mod tests {
         );
 
         // Both optimizations should work together
-        assert!(futility_count >= 0);
-        assert!(lmr_count >= 0);
         assert!(futility_lmr_only == 0); // Futility disabled
-        assert!(lmr_lmr_only >= 0);
 
         // LMR should be active in both searches
         assert_eq!(futility_lmr_only, 0); // Confirm futility is disabled
@@ -2720,8 +2617,6 @@ mod tests {
         );
 
         // Both should complete without crashing
-        assert!(pruned_high >= 0);
-        assert!(pruned_low >= 0);
 
         // Verify the parameters are set correctly
         assert_eq!(search_high_depth.params.futility_min_depth, 5);
@@ -2743,7 +2638,7 @@ mod tests {
         );
 
         // Use direct quiescence search to test isolated functionality
-        let qscore = search.qsearch(-INFINITE, INFINITE, 4);
+        let qscore = search.qsearch(-INFINITE, INFINITE, 4, 0);
 
         // Should have searched quiescence nodes
         assert!(search.stats().qsearch_nodes > 0);
@@ -2770,13 +2665,13 @@ mod tests {
         let mut search_shallow =
             Search::new(board.clone(), 1, SearchParams::new().qsearch_depth(1));
 
-        let qscore_shallow = search_shallow.qsearch(-INFINITE, INFINITE, 1);
+        let qscore_shallow = search_shallow.qsearch(-INFINITE, INFINITE, 1, 0);
         let qnodes_shallow = search_shallow.stats().qsearch_nodes;
 
         // Test with depth = 6 (full quiescence)
         let mut search_deep = Search::new(board.clone(), 1, SearchParams::new().qsearch_depth(6));
 
-        let qscore_deep = search_deep.qsearch(-INFINITE, INFINITE, 6);
+        let qscore_deep = search_deep.qsearch(-INFINITE, INFINITE, 6, 0);
         let qnodes_deep = search_deep.stats().qsearch_nodes;
 
         // Deeper search should explore more nodes (at least as many)
@@ -2806,7 +2701,7 @@ mod tests {
         let static_score = search.static_eval();
 
         // Get quiescence evaluation
-        let qscore = search.qsearch(-INFINITE, INFINITE, 4);
+        let qscore = search.qsearch(-INFINITE, INFINITE, 4, 0);
 
         // In tactical positions, quiescence should often find different/better scores
         // Both should be reasonable values
@@ -2836,14 +2731,14 @@ mod tests {
         // Test parameter = 0 (no quiescence)
         let mut search_none = Search::new(board.clone(), 1, SearchParams::new().qsearch_depth(0));
 
-        let qscore_none = search_none.qsearch(-INFINITE, INFINITE, 0);
+        let qscore_none = search_none.qsearch(-INFINITE, INFINITE, 0, 0);
         let qnodes_none = search_none.stats().qsearch_nodes;
 
         // Reset stats for next test
         search_none.stats_mut().reset();
 
         // Test parameter = 8 (deep quiescence)
-        let qscore_deep = search_none.qsearch(-INFINITE, INFINITE, 8);
+        let qscore_deep = search_none.qsearch(-INFINITE, INFINITE, 8, 0);
         let qnodes_deep = search_none.stats().qsearch_nodes;
 
         // Both should complete reasonably
@@ -2899,7 +2794,6 @@ mod tests {
         assert!(qnodes_lmr_disabled > 0);
 
         // LMR version should have LMR activity
-        assert!(lmr_count >= 0);
 
         println!(
             "Quiescence+LMR integration - LMR: {} QNodes, No LMR: {} QNodes, LMR reductions: {}",
@@ -2918,7 +2812,7 @@ mod tests {
         let mut search = Search::new(board.clone(), 1, SearchParams::new().qsearch_depth(3));
 
         // Perform quiescence search
-        let qscore = search.qsearch(-INFINITE, INFINITE, 3);
+        let qscore = search.qsearch(-INFINITE, INFINITE, 3, 0);
 
         // Should have searched, indicating capture searching worked
         assert!(search.stats().qsearch_nodes > 0);
@@ -2930,7 +2824,7 @@ mod tests {
         board.set_from_fen("8/8/8/4k3/8/8/8/4K3 w - - 0 1").unwrap(); // Only kings
 
         search.stats_mut().reset();
-        let quiet_qscore = search.qsearch(-INFINITE, INFINITE, 3);
+        let quiet_qscore = search.qsearch(-INFINITE, INFINITE, 3, 0);
         let quiet_qnodes = search.stats().qsearch_nodes;
 
         // Quiet position should have fewer/no noisy moves to search
@@ -3063,7 +2957,7 @@ mod tests {
             .unwrap();
         let mut search = Search::new(board.clone(), 1, SearchParams::new().qsearch_depth(4));
 
-        let qscore_with_see = search.qsearch(-INFINITE, INFINITE, 4);
+        let qscore_with_see = search.qsearch(-INFINITE, INFINITE, 4, 0);
         let nodes_with_see = search.stats().qsearch_nodes;
         let see_evals_count = search.stats().see_evals;
 
